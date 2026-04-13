@@ -24,7 +24,7 @@ self.addEventListener("fetch", (e) => {
   if (url.hostname === "open.er-api.com") {
     e.respondWith(
       fetch(e.request).catch(() =>
-        caches.match("./exchange-calculator-run.html")
+        caches.match("./환율계산기.html")
       )
     );
     return;
