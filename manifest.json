@@ -2,7 +2,7 @@
   "name": "5개국 환율 계산기",
   "short_name": "환율계산기",
   "description": "KRW, JPY, USD, EUR, HUF 실시간 환율 계산기",
-  "start_url": "./환율계산기.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
