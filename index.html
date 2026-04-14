@@ -1529,6 +1529,9 @@
       prog.classList.add('show');
       fill.style.width = '5%';
       lbl.textContent  = 'OCR 초기화 중...';
+      // OCR 전 카테고리를 '기타'로 초기화 (인식 실패 시 식비로 잘못 유지 방지)
+      const rfCat = document.getElementById('rfCategory');
+      if (rfCat) rfCat.value = '기타';
       try {
         const ocrLang = document.getElementById('ocrLang')?.value || 'kor+eng';
         const { data: { text } } = await Tesseract.recognize(receiptFile, ocrLang, {
@@ -1591,97 +1594,143 @@
 
     function parseReceiptText(text) {
       const out = { date: '', amount: null, currency: '', location: '', category: '' };
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      // ── 한글 자간 공백 제거 (lookbehind 없이 — 다중 패스) ───────────────
+      let compact = text;
+      for (let i = 0; i < 6; i++) {
+        const prev = compact;
+        compact = compact.replace(/([\uAC00-\uD7A3]) +([\uAC00-\uD7A3])/g, '$1$2');
+        if (compact === prev) break;
+      }
+
+      // ── OCR 숫자 공백 정규화: "82 000" → "82,000" ────────────────────────
+      function fixNums(s) {
+        return s
+          .replace(/(\d{1,3}) (\d{3})(?!\d)/g, '$1,$2') // "82 000" → "82,000"
+          .replace(/(\d),[ \t]+(\d)/g, '$1,$2');          // "82, 000" → "82,000"
+      }
+      const normT = fixNums(text);
+      const normC = fixNums(compact);
       const upper = text.toUpperCase();
-      // OCR 아티팩트: 한글 사이 공백 제거한 버전도 준비
-      const compact = text.replace(/(?<=[\uAC00-\uD7A3])\s+(?=[\uAC00-\uD7A3])/g, '');
-      const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
 
       // ────────────────────────────────────────────
-      // 1. 날짜
+      // 1. 날짜 (여러 패턴 시도)
       // ────────────────────────────────────────────
-      // 1-A. 한국 승인일시 YYMMDDHHMMSS (예: 260407085848 → 2026-04-07)
-      const krApproval = text.match(/승인일시\s*[:\uff1a]?\s*(\d{2})(\d{2})(\d{2})\d{6}/);
-      if (krApproval) {
-        const [,yy,mm,dd] = krApproval;
-        out.date = `20${yy}-${mm}-${dd}`;
+      // 1-A. 승인일시 YYMMDDHHMMSS (한국 카드 결제)
+      const m1a = normC.match(/승인일시.{0,4}(2[456]\d{10})/) ||
+                  normT.match(/승인일시.{0,4}(2[456]\d{10})/);
+      if (m1a) {
+        const d = m1a[1];
+        out.date = `20${d[0]}${d[1]}-${d[2]}${d[3]}-${d[4]}${d[5]}`;
       }
-      // 1-B. 표준 YYYY-MM-DD / YYYY.MM.DD
+      // 1-B. YYYY + 구분자 + MM + 구분자 + DD (공백/특수문자 허용)
       if (!out.date) {
-        const m = text.match(/(\d{4})\s*[-.\\/]\s*(\d{1,2})\s*[-.\\/]\s*(\d{1,2})/);
+        const m = normT.match(/(20\d{2})[^0-9]{1,3}(0?[1-9]|1[0-2])[^0-9]{1,3}(0?[1-9]|[12]\d|3[01])(?!\d)/);
         if (m) out.date = `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
       }
-      // 1-C. DD.MM.YYYY (유럽식)
+      // 1-C. YYYYMMDD 연속 (유효 월/일 검증)
       if (!out.date) {
-        const m = text.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
-        if (m) out.date = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-      }
-      // 1-D. YYYYMMDD 연속
-      if (!out.date) {
-        const m = text.match(/(\d{4})(\d{2})(\d{2})(?!\d)/);
+        const m = normT.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
         if (m) out.date = `${m[1]}-${m[2]}-${m[3]}`;
+      }
+      // 1-D. YYMMDD+6자리 (한국 승인일시, 컨텍스트 없이)
+      if (!out.date) {
+        const m = normT.match(/\b(2[456])(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{6}\b/);
+        if (m) out.date = `20${m[1]}-${m[2]}-${m[3]}`;
+      }
+      // 1-E. DD.MM.YYYY (유럽식)
+      if (!out.date) {
+        const m = normT.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](20\d{2})\b/);
+        if (m) out.date = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
       }
 
       // ────────────────────────────────────────────
       // 2. 통화 감지
       // ────────────────────────────────────────────
-      // 2-A. 명시적 통화코드
       const CODES = ['HUF','EUR','USD','JPY','GBP','CNY','SGD','AUD','CAD','THB','KRW'];
       for (const c of CODES) {
-        if (new RegExp(`\\b${c}\\b`).test(text)) { out.currency = c; break; }
+        if (new RegExp('\\b' + c + '\\b').test(text)) { out.currency = c; break; }
       }
-      // 2-B. 기호
       if (!out.currency) {
         for (const [s, c] of [['₩','KRW'],['€','EUR'],['£','GBP'],['¥','JPY']]) {
           if (text.includes(s)) { out.currency = c; break; }
         }
       }
-      // 2-C. 한국어 영수증 판단: '원', '합계금액', '부가세', '사업자' 등
-      if (!out.currency && /원[)\s]|합계금액|부가세|사업자번호|사업자등록/.test(compact)) {
-        out.currency = 'KRW';
-      }
-      // 2-D. 헝가리 Ft
+      if (!out.currency && /원[)\s]|합계금액|부가세|사업자|공급가/.test(normC)) out.currency = 'KRW';
       if (!out.currency && /\bFt\b/.test(text)) out.currency = 'HUF';
 
       // ────────────────────────────────────────────
-      // 3. 금액 — "합계" 레이블 우선, 카드/전화번호 제외
+      // 3. 금액 — "합계" 레이블 우선, 카드/전화번호 줄 제외
       // ────────────────────────────────────────────
-      // 3-A. 한국 영수증: 합계금액 / 합 계 / 결제금액 / 승인금액 레이블 뒤 숫자
-      const krTotalRe = /(?:합계\s*금액|합\s*계|결제\s*금액|승인\s*금액|총\s*액)\s*[:\uff1a]?\s*([\d,]+)/;
-      const krM = compact.match(krTotalRe);
-      if (krM) {
-        out.amount = parseFloat(krM[1].replace(/,/g, ''));
+      // 3-A. 한국 합계 레이블 (유연: 자간 공백 0~4자 허용, 숫자 공백 포함 캡처)
+      const totalPatterns = [
+        /합계금액\s*[:\uff1a]?\s*([\d,\s]+)/,
+        /합\s*계\s*[:\uff1a]?\s*([\d,\s]+)/,
+        /결제금액\s*[:\uff1a]?\s*([\d,\s]+)/,
+        /승인금액\s*[:\uff1a]?\s*([\d,\s]+)/,
+        /총\s*액\s*[:\uff1a]?\s*([\d,\s]+)/,
+      ];
+      for (const re of totalPatterns) {
+        const m = normC.match(re) || normT.match(re);
+        if (m) {
+          const n = parseFloat(m[1].replace(/[\s,]/g, ''));
+          if (isFinite(n) && n > 0) { out.amount = n; break; }
+        }
       }
-      // 3-B. 유럽 영수증: ÖSSZESEN / TOTAL / VÉGÖSSZEG 레이블
+      // 3-B. 유럽 합계 레이블
       if (out.amount == null) {
-        const euM = text.match(/(?:ÖSSZESEN|TOTAL|VÉGÖSSZEG|AMOUNT DUE|BETRAG|SUMME)\s*[:\uff1a]?\s*([\d\s,.]+)/i);
+        const euM = normT.match(/(?:ÖSSZESEN|TOTAL|VÉGÖSSZEG|AMOUNT\s*DUE|BETRAG|SUMME)\s*[:\uff1a]?\s*([\d\s,.]+)/i);
         if (euM) {
           const raw = euM[1].trim().replace(/\s/g,'');
-          // 헝가리식: 마지막 쉼표가 소수점 아님 → 쉼표 제거
           out.amount = parseFloat(raw.replace(/,/g,'').replace(/\./g,''));
           if (!isFinite(out.amount)) out.amount = parseFloat(raw.replace(/,/g,''));
         }
       }
-      // 3-C. 최댓값 fallback (카드번호·전화번호·사업자번호 줄 제외)
+      // 3-C. 최댓값 fallback (메타 줄 제외, 정규화된 텍스트 사용)
       if (out.amount == null) {
-        const skipRe = /카드\s*번호|card\s*no|tel|fax|사업자|가맹점|승인\s*no|\*/i;
-        const nums = lines
+        const skipRe = /카드.{0,3}번호|card.{0,3}no|tel|fax|사업자|가맹점|승인.{0,2}no|일련|전화|\*\*/i;
+        const nums = normC.split('\n')
           .filter(l => !skipRe.test(l))
-          .flatMap(l => [...l.matchAll(/\b(\d{1,3}(?:,\d{3})+|\d{4,})\b/g)])
-          .map(m => parseFloat(m[1].replace(/,/g,'')))
-          .filter(n => isFinite(n) && n >= 100 && n < 10_000_000);
+          .flatMap(l => [...l.matchAll(/\b(\d{1,3}(?:,\d{3})+|\d{4,7})\b/g)])
+          .map(m => parseFloat(m[1].replace(/,/g, '')))
+          .filter(n => isFinite(n) && n >= 100 && n <= 9_999_999);
         if (nums.length) out.amount = Math.max(...nums);
       }
 
       // ────────────────────────────────────────────
       // 4. 상호명
       // ────────────────────────────────────────────
-      // 4-A. 한국 '상 호 :' 또는 '상호:' 패턴 (OCR 공백 포함)
-      const krStoreRe = /상\s*호\s*[:\uff1a]\s*(.+)/;
-      const krSM = compact.match(krStoreRe) || text.match(krStoreRe);
-      if (krSM) {
-        out.location = krSM[1].trim().split(/\s{2,}|[|]/)[0].slice(0, 40);
+      // 4-A. "상호:" 패턴 (compact + norm, 여러 변형)
+      const storePatterns = [
+        /상호\s*[:\uff1a]\s*([^\n\r]+)/,
+        /상\s*호\s*[:\uff1a]\s*([^\n\r]+)/,
+        /상\s*호\s*명\s*[:\uff1a]\s*([^\n\r]+)/,
+      ];
+      for (const re of storePatterns) {
+        const m = normC.match(re) || compact.match(re) || normT.match(re);
+        if (m) {
+          let name = m[1].trim();
+          // 추출된 이름 내 한글 자간 공백도 제거
+          for (let i = 0; i < 4; i++) {
+            const prev = name;
+            name = name.replace(/([\uAC00-\uD7A3]) +([\uAC00-\uD7A3])/g, '$1$2');
+            if (name === prev) break;
+          }
+          out.location = name.replace(/[|]/g, '').split(/\s{2,}/)[0].trim().slice(0, 40);
+          if (out.location) break;
+        }
       }
-      // 4-B. 알려진 글로벌 상점 키워드
+      // 4-B. 업종명이 포함된 줄 검색 ("무지내주유소" 등)
+      if (!out.location) {
+        const bizTypes = ['주유소','마트','슈퍼','편의점','카페','커피','식당','음식점','약국','병원','호텔','모텔'];
+        for (const biz of bizTypes) {
+          const re = new RegExp('[\\uAC00-\\uD7A3\\w]*' + biz);
+          const found = compact.match(re);
+          if (found) { out.location = found[0].trim().slice(0, 40); break; }
+        }
+      }
+      // 4-C. 알려진 글로벌 상점 키워드
       if (!out.location) {
         for (const store of KNOWN_STORES) {
           if (upper.includes(store.trim())) {
@@ -1693,12 +1742,15 @@
           }
         }
       }
-      // 4-C. 상단 첫 줄 fallback (숫자/URL/전화번호 줄 제외)
+      // 4-D. 상단 첫 줄 fallback (숫자/OCR 잡음/메타 줄 제외)
       if (!out.location) {
-        const candidate = lines.slice(0, 8).find(l =>
+        const candidate = lines.slice(0, 12).find(l =>
           l.length >= 2 &&
           !/^\d[\d\s\.,\-]*$/.test(l) &&
-          !/^(TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT|사업자|대\s*표|주\s*소|전\s*화)/i.test(l)
+          !(/[|]{1}/.test(l)) &&                              // OCR 파이프 잡음 제외
+          (l.match(/[\uAC00-\uD7A3a-zA-Z]/g) || []).length >= 2 && // 실제 글자 2개 이상
+          !/TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT/i.test(l) &&
+          !/사업자|대\s*표|주\s*소|전\s*화|사\s*업|가맹점|승인|일련|거래/i.test(l)
         );
         if (candidate) out.location = candidate.slice(0, 40);
       }
@@ -1706,7 +1758,8 @@
       // ────────────────────────────────────────────
       // 5. 카테고리 자동 분류
       // ────────────────────────────────────────────
-      const haystack = (out.location + ' ' + text).toUpperCase();
+      // compact 텍스트 사용 (한글 자간 공백 제거 후 키워드 매칭)
+      const haystack = (out.location + ' ' + compact + ' ' + text).toUpperCase();
       for (const { cat, kw } of CATEGORY_RULES) {
         if (kw.some(k => haystack.includes(k.toUpperCase()))) {
           out.category = cat;
