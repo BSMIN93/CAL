@@ -496,6 +496,28 @@
     }
     .filter-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
 
+    /* ── Expense query (정렬·조회) ── */
+    .exp-query {
+      display: grid; gap: 8px; margin-bottom: 14px; padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .exp-query-row {
+      display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: center;
+    }
+    .exp-query-lbl {
+      font-size: .72rem; color: var(--muted); font-weight: 600; white-space: nowrap;
+    }
+    .exp-query-sel, .exp-query-date {
+      width: 100%; min-height: 36px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--input-bg); color: var(--text); font-size: .78rem;
+      padding: 0 8px; font-family: inherit; outline: none; box-sizing: border-box;
+    }
+    .exp-query-sel:focus, .exp-query-date:focus { border-color: var(--accent); }
+    .exp-query-date-range { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+    .exp-query-date-range .exp-query-date { flex: 1 1 118px; min-width: 0; }
+    .exp-query-tilde { color: var(--muted); font-size: .8rem; flex-shrink: 0; }
+    .exp-query-reset { margin-top: 2px; }
+
     /* ── KRW rate info ── */
     .krw-rate-info { font-size: .74rem; color: var(--muted); margin-top: 3px; min-height: 1.1em; }
 
@@ -806,6 +828,43 @@
         <button class="filter-btn" data-filter="현금">현금</button>
       </div>
 
+      <div class="exp-query">
+        <div class="exp-query-row">
+          <span class="exp-query-lbl">정렬</span>
+          <select class="exp-query-sel" id="expSortSel">
+            <option value="receipt_date_desc">Date: newest first</option>
+            <option value="receipt_date_asc">Date: oldest first</option>
+            <option value="user_asc">Name: A to Z</option>
+            <option value="user_desc">Name: Z to A</option>
+            <option value="cat_asc">Category: A to Z</option>
+            <option value="cat_desc">Category: Z to A</option>
+            <option value="amount_desc">KRW: high to low</option>
+            <option value="amount_asc">KRW: low to high</option>
+          </select>
+        </div>
+        <div class="exp-query-row">
+          <span class="exp-query-lbl">이름</span>
+          <select class="exp-query-sel" id="expQUserSel" title="지출자 이름으로 조회">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div class="exp-query-row">
+          <span class="exp-query-lbl">항목</span>
+          <select class="exp-query-sel" id="expQCatSel">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div class="exp-query-row">
+          <span class="exp-query-lbl">기간</span>
+          <div class="exp-query-date-range">
+            <input type="date" class="exp-query-date" id="expDateFrom" title="시작일" />
+            <span class="exp-query-tilde">~</span>
+            <input type="date" class="exp-query-date" id="expDateTo" title="종료일" />
+          </div>
+        </div>
+        <button type="button" class="sm-btn exp-query-reset" id="expQueryReset">조회 조건 초기화</button>
+      </div>
+
       <!-- Expense Items -->
       <div class="exp-items" id="expItems">
         <div class="exp-empty">지출 내역이 없습니다.<br>영수증 탭에서 추가해 보세요!</div>
@@ -831,7 +890,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
-    const APP_VERSION = 'v2026.04.14 1334';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
+    const APP_VERSION = 'v2026.04.14 1344';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
@@ -2209,6 +2268,7 @@
         const onlyLocal = localExpenses.filter(e => e._local && !cloudIds.has(String(e.id)));
         expenses = [...onlyLocal, ...expenses];
       }
+      refreshExpenseQueryOptions();
       renderExpenses();
     }
 
@@ -2216,14 +2276,126 @@
       '식비':'🍽️','교통비':'🚌','숙박비':'🏨','쇼핑':'🛍️',
       '관광/여가':'🎡','의료/약국':'💊','통신':'📡','기타':'📦'
     };
+    const EXP_CAT_PRESET = Object.keys(CAT_EMOJI);
 
     function escHtml(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
         .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+    function localizeExpSortSel() {
+      const sel = document.getElementById('expSortSel');
+      if (!sel) return;
+      const L = [
+        '\uD83D\uDCC5 \uB0A8\uC9C0 \u00B7 \uCD5C\uC2E0\uC21C',
+        '\uD83D\uDCC5 \uB0A8\uC9C0 \u00B7 \uC624\uB798\uB41C\uC21C',
+        '\uD83D\uDC64 \uC774\uB984 \u00B7 \uAC00\uB098\uB2E4\uC21C',
+        '\uD83D\uDC64 \uC774\uB984 \u00B7 \uC5ED\uC21C',
+        '\uD83C\uDFF7\uFE0F \uD569\uBAA9 \u00B7 \uAC00\uB098\uB2E4\uC21C',
+        '\uD83C\uDFF7\uFE0F \uD569\uBAA9 \u00B7 \uC5ED\uC21C',
+        '\u20A9 \uC6D0\uD654 \u00B7 \uB192\uC740\uC21C',
+        '\u20A9 \uC6D0\uD654 \u00B7 \uB0AE\uC740\uC21C'
+      ];
+      [...sel.options].forEach((o, i) => { if (L[i]) o.textContent = L[i]; });
+    }
+
+    function getExpenseQueryFromUI() {
+      const sortEl = document.getElementById('expSortSel');
+      const uEl = document.getElementById('expQUserSel');
+      const cEl = document.getElementById('expQCatSel');
+      const fromEl = document.getElementById('expDateFrom');
+      const toEl = document.getElementById('expDateTo');
+      return {
+        sort: (sortEl && sortEl.value) || 'receipt_date_desc',
+        qUser: (uEl && uEl.value) || '',
+        qCat: (cEl && cEl.value) || '',
+        dFrom: (fromEl && fromEl.value) || '',
+        dTo: (toEl && toEl.value) || '',
+      };
+    }
+
+    function receiptDateForFilter(e) {
+      return e.receipt_date || e.date || '';
+    }
+
+    function passesExtraExpenseFilters(e, q) {
+      if (q.qUser && (e.user_name || '').trim() !== q.qUser) return false;
+      if (q.qCat && (e.category || '기타') !== q.qCat) return false;
+      const d = receiptDateForFilter(e);
+      if (q.dFrom || q.dTo) {
+        if (!d) return false;
+        if (q.dFrom && d < q.dFrom) return false;
+        if (q.dTo && d > q.dTo) return false;
+      }
+      return true;
+    }
+
+    function compareExpensesForSort(a, b, sort) {
+      const dateA = receiptDateForFilter(a);
+      const dateB = receiptDateForFilter(b);
+      const userA = (a.user_name || '').trim();
+      const userB = (b.user_name || '').trim();
+      const catA = a.category || '기타';
+      const catB = b.category || '기타';
+      const amtA = Number(a.amount_krw) || 0;
+      const amtB = Number(b.amount_krw) || 0;
+      let c = 0;
+      switch (sort) {
+        case 'receipt_date_asc':
+          c = dateA.localeCompare(dateB);
+          break;
+        case 'receipt_date_desc':
+          c = dateB.localeCompare(dateA);
+          break;
+        case 'user_asc':
+          c = userA.localeCompare(userB, 'ko');
+          break;
+        case 'user_desc':
+          c = userB.localeCompare(userA, 'ko');
+          break;
+        case 'cat_asc':
+          c = catA.localeCompare(catB, 'ko');
+          break;
+        case 'cat_desc':
+          c = catB.localeCompare(catA, 'ko');
+          break;
+        case 'amount_asc':
+          c = amtA - amtB;
+          break;
+        case 'amount_desc':
+          c = amtB - amtA;
+          break;
+        default:
+          c = dateB.localeCompare(dateA);
+      }
+      if (c !== 0) return c;
+      const t = dateB.localeCompare(dateA);
+      if (t !== 0) return t;
+      return String(b.id).localeCompare(String(a.id));
+    }
+
+    function refreshExpenseQueryOptions() {
+      const userSel = document.getElementById('expQUserSel');
+      const catSel = document.getElementById('expQCatSel');
+      if (!userSel || !catSel) return;
+      const prevU = userSel.value;
+      const users = [...new Set(expenses.map(e => (e.user_name || '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'ko'));
+      userSel.innerHTML = '<option value="">\uC804\uCCB4</option>' +
+        users.map(u => `<option value="${escHtml(u)}">${escHtml(u)}</option>`).join('');
+      if ([...userSel.options].some(o => o.value === prevU)) userSel.value = prevU;
+
+      const prevC = catSel.value;
+      const fromData = expenses.map(e => e.category).filter(Boolean);
+      const cats = [...new Set(EXP_CAT_PRESET.concat(fromData))]
+        .sort((a, b) => a.localeCompare(b, 'ko'));
+      catSel.innerHTML = '<option value="">\uC804\uCCB4</option>' +
+        cats.map(ct => `<option value="${escHtml(ct)}">${escHtml(ct)}</option>`).join('');
+      if ([...catSel.options].some(o => o.value === prevC)) catSel.value = prevC;
+    }
 
     function renderExpenses() {
       const el = document.getElementById('expItems');
+      const q = getExpenseQueryFromUI();
 
       // Filter
       const filtered = expenses.filter(e => {
@@ -2233,7 +2405,9 @@
         if (expFilter === '개인카드') return e.payment_method === '개인카드';
         if (expFilter === '현금')     return e.payment_method === '현금';
         return true;
-      });
+      }).filter(e => passesExtraExpenseFilters(e, q));
+
+      const sorted = [...filtered].sort((a, b) => compareExpensesForSort(a, b, q.sort));
 
       // Summary (always over ALL expenses, not filtered)
       const total  = expenses.reduce((s, e) => s + (e.amount_krw || 0), 0);
@@ -2241,14 +2415,18 @@
                              .reduce((s, e) => s + (e.amount_krw || 0), 0);
       document.getElementById('expTotal').textContent  = '₩ ' + fmtDisp(total,  'KRW');
       document.getElementById('expUnpaid').textContent = '₩ ' + fmtDisp(unpaid, 'KRW');
-      document.getElementById('expCount').textContent  = expenses.length + '건';
+      const extraQ = !!(q.qUser || q.qCat || q.dFrom || q.dTo);
+      const listDiffers = sorted.length !== expenses.length || extraQ;
+      document.getElementById('expCount').textContent = listDiffers
+        ? `${sorted.length}건 표시 / 전체 ${expenses.length}건`
+        : expenses.length + '건';
 
-      if (!filtered.length) {
+      if (!sorted.length) {
         el.innerHTML = '<div class="exp-empty">조건에 맞는 지출 내역이 없습니다.</div>';
         return;
       }
 
-      el.innerHTML = filtered.map((e, i) => {
+      el.innerHTML = sorted.map((e, i) => {
         const em    = CAT_EMOJI[e.category] || '📦';
         const src   = e._local ? '🔵 로컬' : '☁️ 클라우드';
         const loc   = isFinite(e.amount_local) ? fmtDisp(e.amount_local, e.currency) : '?';
@@ -2288,7 +2466,7 @@
         btn.addEventListener('click', ev => {
           ev.stopPropagation();
           const idx = +btn.dataset.idx;
-          const realIdx = expenses.indexOf(filtered[idx]);
+          const realIdx = expenses.indexOf(sorted[idx]);
           openExpEdit(realIdx);
         })
       );
@@ -2296,13 +2474,13 @@
         btn.addEventListener('click', ev => {
           ev.stopPropagation();
           const idx = +btn.dataset.idx;
-          const realIdx = expenses.indexOf(filtered[idx]);
+          const realIdx = expenses.indexOf(sorted[idx]);
           deleteExpense(realIdx);
         })
       );
       el.querySelectorAll('.reimb-btn').forEach(btn =>
         btn.addEventListener('click', () => {
-          const e = filtered[+btn.dataset.idx];
+          const e = sorted[+btn.dataset.idx];
           if (e) toggleReimbursed(e);
         })
       );
@@ -2446,6 +2624,29 @@
       });
       document.getElementById('refreshExpBtn').addEventListener('click', loadExpenses);
       document.getElementById('csvBtn').addEventListener('click', exportCSV);
+
+      localizeExpSortSel();
+      ['expSortSel', 'expQUserSel', 'expQCatSel', 'expDateFrom', 'expDateTo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => renderExpenses());
+      });
+      const expQueryReset = document.getElementById('expQueryReset');
+      if (expQueryReset) {
+        expQueryReset.addEventListener('click', () => {
+          const sortSel = document.getElementById('expSortSel');
+          if (sortSel) sortSel.value = 'receipt_date_desc';
+          const u = document.getElementById('expQUserSel');
+          const c = document.getElementById('expQCatSel');
+          if (u) u.value = '';
+          if (c) c.value = '';
+          const df = document.getElementById('expDateFrom');
+          const dt = document.getElementById('expDateTo');
+          if (df) df.value = '';
+          if (dt) dt.value = '';
+          localizeExpSortSel();
+          renderExpenses();
+        });
+      }
 
       // OCR 언어 선택기: 언어 변경 시 통화 자동 제안 + 경고 표시
       const ocrLangSel  = document.getElementById('ocrLang');

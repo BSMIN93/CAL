@@ -1,6 +1,6 @@
 {
   "name": "exchange-calculator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "실시간 환율 계산기 + 영수증 스캐너 & 지출 관리 PWA",
   "private": true,
   "scripts": {
