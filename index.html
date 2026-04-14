@@ -45,7 +45,7 @@
     }
 
     /* ── Header ── */
-    header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+    header { display: flex; justify-content: space-between; align-items: center; gap: 8px;
       background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
       border: 1px solid var(--border); border-radius: 18px; padding: 14px 16px;
       box-shadow: var(--shadow); }
@@ -189,7 +189,15 @@
       position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
       width: min(100%, 580px); background: var(--modal-bg); border-top-left-radius: 20px;
       border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
-      padding: 20px 20px 36px;
+      padding: 20px 20px calc(env(safe-area-inset-bottom, 12px) + 24px);
+      max-height: 88dvh; overflow-y: auto;
+    }
+    .app-version {
+      text-align: center; font-size: .72rem; color: var(--muted);
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 14px; display: inline-block;
+      margin: 12px auto 0; width: 100%; box-sizing: border-box;
+      letter-spacing: .04em;
     }
     .info-modal.hidden { display: none; }
     .info-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -543,6 +551,7 @@
       </div>
     </div>
     <div class="info-footer">Made with ❤️ by 백승민</div>
+    <div class="app-version" id="appVersion">버전 정보 로딩 중...</div>
     <button class="update-btn" id="updateBtn">🔄 최신 버전으로 업데이트</button>
     <div class="update-hint">캐시를 초기화하고 최신 버전을 강제로 불러옵니다</div>
   </div>
@@ -805,6 +814,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
+    const APP_VERSION = 'v2026.04.14';   // 배포 날짜 기반 버전 (업데이트 시 수정)
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
@@ -930,6 +940,7 @@
       document.getElementById('overlay').classList.add('hidden');
     }
     function openInfo() {
+      document.getElementById('appVersion').textContent = `현재 버전: ${APP_VERSION}`;
       document.getElementById('infoModal').classList.remove('hidden');
       document.getElementById('overlay').classList.remove('hidden');
     }
