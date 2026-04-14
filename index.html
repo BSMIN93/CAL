@@ -332,8 +332,16 @@
     .exp-card {
       background: var(--panel); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
-      /* 뷰포트 높이에 맞게 카드가 최소한 화면을 채우도록 */
-      min-height: calc(100dvh - 68px - 28px - 60px); /* nav + body padding + header 여유 */
+    }
+    /*
+      영수증·지출내역 탭: 헤더 아래 남은 뷰포트 전부 채우기
+      --header-h: JS init()에서 실측 후 주입
+      body padding = top 14px + bottom 82px = 96px
+      .app gap = 12px
+    */
+    .app[data-page="expenses"] #expensesPage,
+    .app[data-page="receipt"]  #receiptPage {
+      min-height: calc(100dvh - 96px - var(--header-h, 76px) - 12px);
     }
     .exp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .exp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1438,6 +1446,8 @@
       document.querySelectorAll('.nav-tab').forEach(t =>
         t.classList.toggle('active', t.dataset.tab === page)
       );
+      // CSS data-page 속성으로 탭별 레이아웃 적용
+      document.querySelector('main.app').setAttribute('data-page', page);
       if (page === 'expenses') loadExpenses();
     }
 
@@ -2092,6 +2102,16 @@
       renderFavorites();
       initChart();
       bindAll();
+      // 헤더 실제 높이를 CSS 변수로 등록 (영수증·지출내역 탭 min-height 계산에 사용)
+      requestAnimationFrame(() => {
+        const hdr = document.querySelector('header');
+        if (hdr) {
+          const h = hdr.getBoundingClientRect().height + 12; // +gap
+          document.documentElement.style.setProperty('--header-h', Math.ceil(h) + 'px');
+        }
+      });
+      // 초기 탭을 home으로 설정
+      document.querySelector('main.app').setAttribute('data-page', 'home');
       initReceiptPage();
 
       const stored = JSON.parse(lsGet('ratesCache') || 'null');
