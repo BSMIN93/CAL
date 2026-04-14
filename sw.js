@@ -1,8 +1,8 @@
-const CACHE_NAME = "exchange-v2";
+const CACHE_NAME = "exchange-v3"; // 버전 올릴 때마다 숫자 증가 → 구 캐시 자동 삭제
 const STATIC = [
-  "./index.html",
   "./manifest.json",
   "./icon.svg"
+  // index.html은 항상 네트워크 우선으로 처리 (아래 fetch 핸들러 참고)
 ];
 
 self.addEventListener("install", (e) => {
@@ -22,7 +22,21 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
-  // 환율 API — 네트워크 우선, 실패 시 캐시된 앱 반환
+  // ── index.html: 네트워크 우선 → 오프라인 시 캐시 fallback ──
+  if (url.pathname === "/" || url.pathname.endsWith("/index.html") || url.pathname.endsWith("/CAL/")) {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // ── 환율 API: 네트워크 우선 ──
   if (url.hostname === "open.er-api.com" || url.hostname === "api.frankfurter.app") {
     e.respondWith(
       fetch(e.request).catch(() => caches.match("./index.html"))
@@ -30,7 +44,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // CDN 라이브러리 (Chart.js, Tesseract.js, Supabase) — 캐시 우선
+  // ── CDN 라이브러리 (Chart.js, Tesseract.js, Supabase): 캐시 우선 ──
   if (url.hostname === "cdn.jsdelivr.net") {
     e.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
@@ -44,7 +58,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // 나머지 — 캐시 우선, 없으면 네트워크
+  // ── 나머지: 캐시 우선, 없으면 네트워크 ──
   e.respondWith(
     caches.match(e.request).then((cached) => cached || fetch(e.request))
   );
