@@ -405,6 +405,11 @@
     }
     .sum-c-lbl { font-size: .68rem; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
     .sum-c-val { font-size: .88rem; font-weight: 700; word-break: break-all; }
+    .sum-c-val.sum-c-count {
+      word-break: normal;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     .exp-items { display: grid; gap: 10px; }
     .ei {
       background: var(--panel-2); border: 1px solid var(--border);
@@ -823,7 +828,7 @@
         </div>
         <div class="sum-c">
           <div class="sum-c-lbl">건수</div>
-          <div class="sum-c-val" id="expCount">0건</div>
+          <div class="sum-c-val sum-c-count" id="expCount">0건</div>
         </div>
       </div>
 
@@ -886,7 +891,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
-    const APP_VERSION = 'v2026.04.14 2049';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
+    const APP_VERSION = 'v2026.04.14 2059';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
@@ -969,6 +974,13 @@
 
     function formatDate(d) {
       return d.toISOString().split('T')[0];
+    }
+
+    /** YYYY-MM-DD -> M/D for chart axis (e.g. 4/14) */
+    function chartLabelMonthDay(iso) {
+      if (!iso || typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
+      const [, m, d] = iso.split('-');
+      return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
     }
 
     function cssVar(name) {
@@ -1366,7 +1378,7 @@
             legend: { display: false },
             tooltip: {
               callbacks: {
-                title: items => items[0]?.label || '',
+                title: items => chartLabelMonthDay(items[0]?.label) || items[0]?.label || '',
                 label: item => {
                   const v = item.parsed.y;
                   if (v == null) return '';
@@ -1383,7 +1395,14 @@
           scales: {
             x: {
               grid: { color: 'rgba(255,255,255,.05)' },
-              ticks: { color: '#8892a4', maxTicksLimit: 6, maxRotation: 0 }
+              ticks: {
+                color: '#8892a4', maxTicksLimit: 6, maxRotation: 0,
+                callback: function (tickValue, index) {
+                  const labels = this.chart.data.labels;
+                  const raw = labels[tickValue] != null ? labels[tickValue] : (labels[index] ?? tickValue);
+                  return chartLabelMonthDay(raw) || String(raw ?? '');
+                },
+              }
             },
             y: {
               position: 'right',
@@ -2422,7 +2441,7 @@
       const extraQ = !!(q.qUser || q.qCat || q.dFrom || q.dTo);
       const listDiffers = sorted.length !== expenses.length || extraQ;
       document.getElementById('expCount').textContent = listDiffers
-        ? `${sorted.length}건 표시 / 전체 ${expenses.length}건`
+        ? `${sorted.length}/${expenses.length}건`
         : expenses.length + '건';
 
       if (!sorted.length) {
