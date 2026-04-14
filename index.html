@@ -34,10 +34,15 @@
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; width: 100%; min-height: 100%; background: var(--bg); color: var(--text);
-      font-family: "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif; }
-    body { min-height: 100dvh; display: grid; place-items: start center;
-           padding: 14px 14px calc(14px + 68px); /* 하단: 14px + 고정 nav 높이 68px */ }
-    .app { width: min(100%, 580px); display: grid; gap: 12px; }
+      font-family: "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
+      overflow-x: hidden; /* 가로 스크롤 완전 차단 */ }
+    body { min-height: 100dvh; padding: 14px 14px 0; box-sizing: border-box; }
+    .app {
+      width: 100%; max-width: 580px; margin: 0 auto;
+      display: grid; gap: 12px; min-width: 0;
+      /* 하단 padding = nav 높이 + safe-area + 여유 */
+      padding-bottom: calc(68px + env(safe-area-inset-bottom, 8px) + 14px);
+    }
 
     /* ── Header ── */
     header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
@@ -230,16 +235,16 @@
 
     /* ── Responsive ── */
     @media (max-width: 430px) {
-      body { padding: 10px; }
+      body { padding: 10px 10px 0; }
       .row { grid-template-columns: 1fr; gap: 5px; }
       .currency-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
     }
 
     /* ── Bottom Nav ── */
-    body { padding-bottom: calc(68px + env(safe-area-inset-bottom, 6px)); }
     .bottom-nav {
-      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-      width: min(100%, 580px); background: var(--panel); border-top: 1px solid var(--border);
+      position: fixed; bottom: 0; left: 0; right: 0;
+      max-width: 580px; margin: 0 auto;
+      background: var(--panel); border-top: 1px solid var(--border);
       display: flex; z-index: 30;
       padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
     }
@@ -342,6 +347,7 @@
     .exp-card {
       background: var(--panel); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+      min-width: 0; max-width: 100%; overflow-x: hidden;
     }
     /*
       영수증·지출내역 탭: 헤더 아래 남은 뷰포트 전부 채우기
@@ -349,9 +355,10 @@
       body padding = top 14px + bottom 82px = 96px
       .app gap = 12px
     */
+    /* body padding top = 14px, app padding-bottom(nav) = ~90px, gap = 12px */
     .app[data-page="expenses"] #expensesPage,
     .app[data-page="receipt"]  #receiptPage {
-      min-height: calc(100dvh - 96px - var(--header-h, 76px) - 12px);
+      min-height: calc(100dvh - 14px - 90px - var(--header-h, 76px) - 12px);
     }
     .exp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .exp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
