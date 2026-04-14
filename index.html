@@ -257,6 +257,19 @@
       color: var(--muted); font-size: .88rem; pointer-events: none; }
     .scan-ph-icon { font-size: 2.8rem; }
     .scan-row { display: flex; gap: 8px; margin-top: 10px; }
+    .ocr-lang-row {
+      display: flex; align-items: center; gap: 8px; margin-top: 10px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 12px; flex-wrap: wrap;
+    }
+    .ocr-lang-label { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+    .ocr-lang-sel {
+      flex: 1; min-width: 0; border: none; background: transparent;
+      color: var(--text); font-size: .82rem; font-family: inherit;
+      cursor: pointer; outline: none;
+    }
+    .ocr-lang-hint { font-size: .72rem; color: var(--muted); width: 100%; margin-top: 2px; }
+    .ocr-lang-hint.warn { color: #f59e0b; }
     .primary-btn {
       flex: 1; min-height: 46px; border-radius: 12px; border: none;
       background: var(--accent); color: #fff; font-size: .88rem; font-weight: 700;
@@ -556,6 +569,23 @@
       <div class="scan-row">
         <button class="primary-btn" id="ocrScanBtn" disabled>🔄 다시 스캔</button>
         <button class="outline-btn" id="galleryBtn">🖼️ 갤러리</button>
+      </div>
+
+      <!-- OCR 언어 선택 -->
+      <div class="ocr-lang-row">
+        <span class="ocr-lang-label">🌐 인식 언어</span>
+        <select class="ocr-lang-sel" id="ocrLang">
+          <option value="kor+eng"  data-currency="KRW">🇰🇷 한국어</option>
+          <option value="eng"      data-currency="">🇺🇸 English (유럽 공통)</option>
+          <option value="hun+eng"  data-currency="HUF">🇭🇺 Magyar (헝가리)</option>
+          <option value="jpn+eng"  data-currency="JPY">🇯🇵 日本語 ⚠️느림</option>
+          <option value="chi_sim+eng" data-currency="CNY">🇨🇳 中文(简) ⚠️느림</option>
+          <option value="chi_tra+eng" data-currency="TWD">🇹🇼 中文(繁) ⚠️느림</option>
+          <option value="deu+eng"  data-currency="EUR">🇩🇪 Deutsch</option>
+          <option value="fra+eng"  data-currency="EUR">🇫🇷 Français</option>
+          <option value="tha+eng"  data-currency="THB">🇹🇭 ภาษาไทย ⚠️느림</option>
+        </select>
+        <span class="ocr-lang-hint" id="ocrLangHint"></span>
       </div>
 
       <div class="ocr-prog" id="ocrProg">
@@ -1418,7 +1448,8 @@
       fill.style.width = '5%';
       lbl.textContent  = 'OCR 초기화 중...';
       try {
-        const { data: { text } } = await Tesseract.recognize(receiptFile, 'kor+eng', {
+        const ocrLang = document.getElementById('ocrLang')?.value || 'kor+eng';
+        const { data: { text } } = await Tesseract.recognize(receiptFile, ocrLang, {
           logger: m => {
             const map = {
               'loading tesseract core'      : ['12%', '엔진 로딩 중...'],
@@ -1981,6 +2012,32 @@
       });
       document.getElementById('refreshExpBtn').addEventListener('click', loadExpenses);
       document.getElementById('csvBtn').addEventListener('click', exportCSV);
+
+      // OCR 언어 선택기: 언어 변경 시 통화 자동 제안 + 경고 표시
+      const ocrLangSel  = document.getElementById('ocrLang');
+      const ocrLangHint = document.getElementById('ocrLangHint');
+      const HEAVY_LANGS = ['jpn','chi_sim','chi_tra','tha']; // 대용량 언어팩
+      function updateOcrLangHint() {
+        const val      = ocrLangSel.value;
+        const opt      = ocrLangSel.selectedOptions[0];
+        const currency = opt?.dataset.currency;
+        const isHeavy  = HEAVY_LANGS.some(l => val.startsWith(l));
+        // 통화 자동 설정 (영수증 탭에서 언어 선택 시)
+        if (currency) {
+          const curSel = document.getElementById('rfCurrency');
+          if ([...curSel.options].some(o => o.value === currency)) curSel.value = currency;
+        }
+        // 힌트 메시지
+        if (isHeavy) {
+          ocrLangHint.textContent = '⚠️ 첫 스캔 시 언어팩(20~40MB) 다운로드로 30초 이상 소요될 수 있습니다.';
+          ocrLangHint.className  = 'ocr-lang-hint warn';
+        } else {
+          ocrLangHint.textContent = '';
+          ocrLangHint.className  = 'ocr-lang-hint';
+        }
+      }
+      ocrLangSel.addEventListener('change', updateOcrLangHint);
+      updateOcrLangHint(); // 초기 실행
 
       // Filter buttons
       document.querySelectorAll('.filter-btn').forEach(btn =>
