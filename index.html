@@ -166,6 +166,11 @@
       border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
       padding: 20px 16px 30px; max-height: 70dvh; overflow-y: auto; }
     .modal.hidden { display: none; }
+    .exp-edit-modal {
+      z-index: 12;
+      max-height: 88dvh;
+      padding: 20px 16px calc(68px + env(safe-area-inset-bottom, 8px) + 16px);
+    }
     .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px;
       margin: 0 auto 16px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -404,10 +409,12 @@
       background: var(--accent-dim); color: var(--accent); white-space: nowrap;
     }
     .ei-user { font-size: .74rem; color: var(--muted); margin-top: 3px; }
-    .ei-del {
+    .ei-actions { display: flex; gap: 2px; flex-shrink: 0; align-items: flex-start; }
+    .ei-edit, .ei-del {
       border: none; background: none; color: var(--muted); font-size: .9rem;
       cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; line-height: 1;
     }
+    .ei-edit:hover { color: var(--accent); background: var(--accent-dim); }
     .ei-del:hover { color: var(--red); background: rgba(248,113,113,.1); }
     /* 금액 행: 모바일에서 세로 배치 */
     .ei-amts {
@@ -564,6 +571,16 @@
     </div>
     <p class="modal-desc">최소 2개 이상 선택 · KRW는 고정</p>
     <div class="currency-grid" id="currencyGrid"></div>
+  </div>
+
+  <div id="expEditModal" class="modal exp-edit-modal hidden">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h3 id="expEditModalTitle">지출 내역 수정</h3>
+      <button type="button" class="modal-close" id="closeExpEdit">��</button>
+    </div>
+    <p class="modal-desc" id="expEditModalDesc"></p>
+    <div id="expEditFormRoot"></div>
   </div>
 
   <main class="app">
@@ -947,6 +964,172 @@
     function closeInfo() {
       document.getElementById('infoModal').classList.add('hidden');
       document.getElementById('overlay').classList.add('hidden');
+    }
+
+    function normReceiptDateInput(d) {
+      if (d == null || d === '') return '';
+      const s = String(d);
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+      try { return new Date(s).toISOString().slice(0, 10); } catch (_) { return ''; }
+    }
+
+    function setupExpEditFormClone() {
+      const root = document.getElementById('expEditFormRoot');
+      if (!root || root.dataset.cloned === '1') return;
+      const src = document.querySelector('#receiptPage .rf');
+      if (!src) return;
+      const clone = src.cloneNode(true);
+      const pairs = [
+        ['rfDate', 'edDate'], ['rfCategory', 'edCategory'], ['rfLocation', 'edLocation'],
+        ['rfCurrency', 'edCurrency'], ['rfAmount', 'edAmount'], ['rfKrw', 'edKrw'],
+        ['rfRate', 'edRate'], ['rfPayment', 'edPayment'], ['rfUser', 'edUser'],
+        ['rfNote', 'edNote'], ['saveReceiptBtn', 'saveExpEditBtn'],
+      ];
+      pairs.forEach(([a, b]) => {
+        const el = clone.querySelector('#' + a);
+        if (el) el.id = b;
+      });
+      clone.querySelectorAll('label[for]').forEach(lab => {
+        const f = lab.getAttribute('for');
+        if (f && f.startsWith('rf')) lab.setAttribute('for', 'ed' + f.slice(2));
+      });
+      const saveBtn = clone.querySelector('#saveExpEditBtn');
+      if (saveBtn) {
+        saveBtn.type = 'button';
+        saveBtn.textContent = '\u{1F4BE} \uBCC0\uACBD \uC800\uC7A5';
+      }
+      const noteRow = clone.querySelector('#edNote')?.closest('.rf-row');
+      if (noteRow) {
+        const reimbRow = document.createElement('div');
+        reimbRow.className = 'rf-row';
+        reimbRow.style.alignItems = 'center';
+        reimbRow.innerHTML =
+          '<label class="rf-lbl" for="edReimbursed">\uC815\uC0B0</label>' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem">' +
+          '<input type="checkbox" id="edReimbursed" style="width:18px;height:18px;accent-color:var(--accent)" />' +
+          ' \uC815\uC0B0 \uC644\uB8CC</label>';
+        noteRow.after(reimbRow);
+      }
+      root.appendChild(clone);
+      root.dataset.cloned = '1';
+      const desc = document.getElementById('expEditModalDesc');
+      if (desc) {
+        desc.textContent =
+          '\uBCC0\uACBD \uD6C4 \uC800\uC7A5\uD558\uBA74 \uBAA9\uB85D\uACFC DB(\uC5F0\uACB0 \uC2DC)\uC5D0 \uBC18\uC601\uB429\uB2C8\uB2E4.';
+      }
+      const xbtn = document.getElementById('closeExpEdit');
+      if (xbtn) xbtn.textContent = '\u2715';
+      document.getElementById('saveExpEditBtn').addEventListener('click', saveExpEdit);
+      ['edAmount', 'edCurrency'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', calcEditKrw);
+          el.addEventListener('change', calcEditKrw);
+        }
+      });
+    }
+
+    function calcEditKrw() {
+      const amt = parseFloat(document.getElementById('edAmount')?.value);
+      const cur = document.getElementById('edCurrency')?.value;
+      const box = document.getElementById('edKrw');
+      const rateEl = document.getElementById('edRate');
+      if (!box || !rateEl) return;
+      const rates = usdRates || JSON.parse(lsGet('ratesCache') || 'null')?.rates;
+      if (rates && rates[cur] && rates['KRW']) {
+        const rate = rates['KRW'] / rates[cur];
+        rateEl.textContent = '1 ' + cur + ' \u2248 ' + fmtRate(rate);
+        if (isFinite(amt) && amt > 0) {
+          box.textContent = '\u20A9 ' + fmtDisp(Math.round(amt * rate), 'KRW');
+        } else {
+          box.textContent = '-';
+        }
+      } else {
+        box.textContent = '\u26A0\uFE0F \uD658\uC728 \uC5C6\uC74C';
+        rateEl.textContent = '';
+      }
+    }
+
+    function openExpEdit(realIdx) {
+      if (realIdx < 0) return;
+      setupExpEditFormClone();
+      const e = expenses[realIdx];
+      if (!e) return;
+      expEditIdx = realIdx;
+      document.getElementById('edDate').value = normReceiptDateInput(e.receipt_date || e.date);
+      const catSel = document.getElementById('edCategory');
+      const cv = e.category || '\uAE30\uD0C0';
+      catSel.value = [...catSel.options].some(o => o.value === cv) ? cv : '\uAE30\uD0C0';
+      document.getElementById('edLocation').value = e.location_name || '';
+      const curSel = document.getElementById('edCurrency');
+      const curv = e.currency || 'KRW';
+      curSel.value = [...curSel.options].some(o => o.value === curv) ? curv : 'KRW';
+      document.getElementById('edAmount').value = e.amount_local != null ? e.amount_local : '';
+      const pmSel = document.getElementById('edPayment');
+      const pmv = e.payment_method || '\uAC1C\uC778\uCE74\uB4DC';
+      pmSel.value = [...pmSel.options].some(o => o.value === pmv) ? pmv : '\uAC1C\uC778\uCE74\uB4DC';
+      document.getElementById('edUser').value = e.user_name || '';
+      document.getElementById('edNote').value = e.note || '';
+      const reimb = document.getElementById('edReimbursed');
+      if (reimb) reimb.checked = !!e.is_reimbursed;
+      calcEditKrw();
+      document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('infoModal').classList.add('hidden');
+      document.getElementById('expEditModal').classList.remove('hidden');
+      document.getElementById('overlay').classList.remove('hidden');
+    }
+
+    function closeExpEdit() {
+      document.getElementById('expEditModal').classList.add('hidden');
+      document.getElementById('overlay').classList.add('hidden');
+      expEditIdx = -1;
+    }
+
+    async function saveExpEdit() {
+      if (expEditIdx < 0) return;
+      const e = expenses[expEditIdx];
+      if (!e) return;
+      const receiptDate = document.getElementById('edDate').value;
+      const category = document.getElementById('edCategory').value;
+      const locationName = document.getElementById('edLocation').value.trim();
+      const currency = document.getElementById('edCurrency').value;
+      const amtRaw = parseFloat(document.getElementById('edAmount').value);
+      const paymentMethod = document.getElementById('edPayment').value;
+      const userName = document.getElementById('edUser').value.trim() || '\uC2B9\uBBFC';
+      const note = document.getElementById('edNote').value.trim();
+      if (!receiptDate) { showToast('\u{1F4C5} \uB0A0\uC9DC\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694'); return; }
+      if (!isFinite(amtRaw) || amtRaw <= 0) { showToast('\u{1F4B0} \uAE08\uC561\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694'); return; }
+      const exchangeRate = getExchangeRate(currency);
+      const amtKrw = exchangeRate ? Math.round(amtRaw * exchangeRate) : null;
+      const payload = {
+        receipt_date: receiptDate,
+        category,
+        amount_local: amtRaw,
+        currency,
+        exchange_rate: exchangeRate ? Math.round(exchangeRate * 10000) / 10000 : null,
+        amount_krw: amtKrw,
+        payment_method: paymentMethod,
+        user_name: userName,
+        location_name: locationName || null,
+        note: note || null,
+        is_reimbursed: !!document.getElementById('edReimbursed')?.checked,
+      };
+      Object.assign(e, payload);
+      if (e._local) {
+        const le = localExpenses.find(l => l.id === e.id);
+        if (le) Object.assign(le, payload);
+        lsSet('localExpenses', localExpenses);
+      } else if (supaClient && e.id) {
+        try {
+          await supaClient.from('receipts').update(payload).eq('id', e.id);
+        } catch (_) {
+          showToast('\u2601\uFE0F \uC800\uC7A5 \uC2E4\uD328');
+          return;
+        }
+      }
+      closeExpEdit();
+      renderExpenses();
+      showToast('\u2705 \uC218\uC815 \uC800\uC7A5\uB428');
     }
 
     function renderCurrencyGrid() {
@@ -1416,9 +1599,10 @@
       });
       document.getElementById('settingsBtn').addEventListener('click', openSettings);
       document.getElementById('closeSettings').addEventListener('click', closeSettings);
-      document.getElementById('overlay').addEventListener('click', () => { closeSettings(); closeInfo(); });
+      document.getElementById('overlay').addEventListener('click', () => { closeSettings(); closeInfo(); closeExpEdit(); });
       document.getElementById('infoBtn').addEventListener('click', openInfo);
       document.getElementById('closeInfo').addEventListener('click', closeInfo);
+      document.getElementById('closeExpEdit').addEventListener('click', closeExpEdit);
       document.getElementById('updateBtn').addEventListener('click', async () => {
         const btn = document.getElementById('updateBtn');
         btn.textContent = '⏳ 업데이트 중...';
@@ -1468,6 +1652,7 @@
           if (chartCode) selectChartCode(chartCode);
         });
       });
+      setupExpEditFormClone();
     }
 
     // ── Receipt Scanner & Expense Manager ─────────────────
@@ -1985,6 +2170,7 @@
 
     // ── Expense List ──────────────────────────────────────
     let expenses   = [];
+    let expEditIdx = -1;
     let expFilter  = 'all';
 
     async function loadExpenses() {
@@ -2063,7 +2249,10 @@
               ${e.location_name ? `<div class="ei-location">🏪 ${escHtml(e.location_name)}</div>` : ''}
               ${e.user_name     ? `<div class="ei-user">👤 ${escHtml(e.user_name)}</div>` : ''}
             </div>
-            <button class="ei-del" data-idx="${i}" title="삭제">✕</button>
+            <div class="ei-actions">
+              <button type="button" class="ei-edit" data-idx="${i}" title="\uC218\uC815">\u270F\uFE0F</button>
+              <button type="button" class="ei-del" data-idx="${i}" title="\uC0AD\uC81C">\u2715</button>
+            </div>
           </div>
           <div class="ei-amts">
             <span class="ei-loc">${loc} ${escHtml(e.currency || '')}</span>
@@ -2080,8 +2269,17 @@
         </div>`;
       }).join('');
 
+      el.querySelectorAll('.ei-edit').forEach(btn =>
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const idx = +btn.dataset.idx;
+          const realIdx = expenses.indexOf(filtered[idx]);
+          openExpEdit(realIdx);
+        })
+      );
       el.querySelectorAll('.ei-del').forEach(btn =>
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
           const idx = +btn.dataset.idx;
           const realIdx = expenses.indexOf(filtered[idx]);
           deleteExpense(realIdx);
