@@ -257,19 +257,23 @@
     .scan-ph { display: flex; flex-direction: column; align-items: center; gap: 8px;
       color: var(--muted); font-size: .88rem; pointer-events: none; }
     .scan-ph-icon { font-size: 2.8rem; }
-    .scan-row { display: flex; gap: 8px; margin-top: 10px; }
-    .ocr-lang-row {
-      display: flex; align-items: center; gap: 8px; margin-top: 10px;
-      background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 8px 12px; flex-wrap: wrap;
-    }
-    .ocr-lang-label { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+    .scan-row { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; }
     .ocr-lang-sel {
-      flex: 1; min-width: 0; border: none; background: transparent;
-      color: var(--text); font-size: .82rem; font-family: inherit;
+      flex: 0 1 auto; min-width: 0;
+      min-height: 46px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--input-bg); color: var(--text);
+      font-size: .82rem; font-family: inherit; padding: 0 28px 0 10px;
       cursor: pointer; outline: none;
+      -webkit-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238892a4' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center;
     }
-    .ocr-lang-hint { font-size: .72rem; color: var(--muted); width: 100%; margin-top: 2px; }
+    .ocr-lang-sel:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .ocr-lang-hint {
+      display: block; font-size: .72rem; color: var(--muted);
+      margin-top: 5px; min-height: 0; line-height: 1.4;
+    }
+    .ocr-lang-hint:empty { display: none; }
     .ocr-lang-hint.warn { color: #f59e0b; }
     .primary-btn {
       flex: 1; min-height: 46px; border-radius: 12px; border: none;
@@ -292,8 +296,11 @@
 
     /* ── Receipt Form ── */
     .rf { display: grid; gap: 9px; margin-top: 14px; }
-    .rf-row { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }
-    .rf-lbl { font-size: .82rem; font-weight: 700; color: var(--muted); }
+    .rf-row { display: grid; grid-template-columns: 80px 1fr; align-items: start; gap: 8px; }
+    /* 레이블을 46px 입력란 높이에 맞춰 시각적 수직 중앙 정렬 */
+    .rf-lbl { font-size: .82rem; font-weight: 700; color: var(--muted); padding-top: 13px; line-height: 1; }
+    /* 원화 행: 레이블이 krw-box에만 정렬되도록 (rate-info 높이 제외) */
+    .rf-row-krw .rf-lbl { padding-top: 13px; }
     .rf-inp, .rf-sel {
       width: 100%; min-height: 46px; border-radius: 11px; border: 1px solid var(--border);
       background: var(--input-bg); color: var(--text); font-size: .95rem;
@@ -449,6 +456,9 @@
 
     @media (max-width: 430px) {
       .rf-row { grid-template-columns: 1fr; gap: 3px; }
+      .rf-lbl { padding-top: 0; }
+      .scan-row { flex-wrap: wrap; }
+      .ocr-lang-sel { flex: 1 1 100%; }
       .exp-summary { flex-wrap: wrap; }
       .scan-row { flex-direction: column; }
       /* 모바일: 요약 카드 글씨 크기 조정 */
@@ -592,26 +602,21 @@
       <input type="file" id="rfFileGallery" accept="image/*" style="display:none">
 
       <div class="scan-row">
+        <select class="ocr-lang-sel" id="ocrLang" title="인식 언어 선택">
+          <option value="kor+eng"     data-currency="KRW">🇰🇷 한국어</option>
+          <option value="eng"         data-currency="">🇺🇸 English</option>
+          <option value="hun+eng"     data-currency="HUF">🇭🇺 Magyar</option>
+          <option value="jpn+eng"     data-currency="JPY">🇯🇵 日本語</option>
+          <option value="chi_sim+eng" data-currency="CNY">🇨🇳 中文(简)</option>
+          <option value="chi_tra+eng" data-currency="TWD">🇹🇼 中文(繁)</option>
+          <option value="deu+eng"     data-currency="EUR">🇩🇪 Deutsch</option>
+          <option value="fra+eng"     data-currency="EUR">🇫🇷 Français</option>
+          <option value="tha+eng"     data-currency="THB">🇹🇭 Thai</option>
+        </select>
         <button class="primary-btn" id="ocrScanBtn" disabled>🔄 다시 스캔</button>
         <button class="outline-btn" id="galleryBtn">🖼️ 갤러리</button>
       </div>
-
-      <!-- OCR 언어 선택 -->
-      <div class="ocr-lang-row">
-        <span class="ocr-lang-label">🌐 인식 언어</span>
-        <select class="ocr-lang-sel" id="ocrLang">
-          <option value="kor+eng"  data-currency="KRW">🇰🇷 한국어</option>
-          <option value="eng"      data-currency="">🇺🇸 English (유럽 공통)</option>
-          <option value="hun+eng"  data-currency="HUF">🇭🇺 Magyar (헝가리)</option>
-          <option value="jpn+eng"  data-currency="JPY">🇯🇵 日本語 ⚠️느림</option>
-          <option value="chi_sim+eng" data-currency="CNY">🇨🇳 中文(简) ⚠️느림</option>
-          <option value="chi_tra+eng" data-currency="TWD">🇹🇼 中文(繁) ⚠️느림</option>
-          <option value="deu+eng"  data-currency="EUR">🇩🇪 Deutsch</option>
-          <option value="fra+eng"  data-currency="EUR">🇫🇷 Français</option>
-          <option value="tha+eng"  data-currency="THB">🇹🇭 ภาษาไทย ⚠️느림</option>
-        </select>
-        <span class="ocr-lang-hint" id="ocrLangHint"></span>
-      </div>
+      <span class="ocr-lang-hint" id="ocrLangHint"></span>
 
       <div class="ocr-prog" id="ocrProg">
         <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
@@ -661,7 +666,7 @@
           <label class="rf-lbl" for="rfAmount">💰 금액</label>
           <input class="rf-inp" type="number" id="rfAmount" inputmode="decimal" step="any" min="0" placeholder="0" />
         </div>
-        <div class="rf-row">
+        <div class="rf-row rf-row-krw">
           <label class="rf-lbl">🇰🇷 원화</label>
           <div>
             <div class="krw-box" id="rfKrw">-</div>
