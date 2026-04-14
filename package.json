@@ -1,0 +1,17 @@
+{
+  "name": "exchange-calculator",
+  "version": "1.0.0",
+  "description": "실시간 환율 계산기 + 영수증 스캐너 & 지출 관리 PWA",
+  "private": true,
+  "scripts": {
+    "start": "serve . --listen 3000 --no-clipboard",
+    "dev":   "serve . --listen 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  },
+  "notes": {
+    "libraries": "Chart.js, Tesseract.js, Supabase-js 는 CDN으로 로드되므로 npm install 불필요",
+    "env": ".env.local 은 빌드 도구 없이 자동 주입되지 않음. 값은 index.html 내부에 하드코딩됨"
+  }
+}

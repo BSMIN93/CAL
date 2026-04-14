@@ -12,6 +12,8 @@
   <link rel="apple-touch-icon" href="icon.svg" />
   <title>실시간 환율 계산기</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     :root { --radius: 14px; --radius-sm: 10px; }
 
@@ -98,8 +100,13 @@
     .period-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
     .chart-wrap { position: relative; height: 160px; }
     .chart-loading { position: absolute; inset: 0; display: grid; place-items: center;
-      color: var(--muted); font-size: .85rem; }
+      color: var(--muted); font-size: .85rem; background: var(--panel); border-radius: 8px;
+      gap: 8px; }
     .chart-loading.hidden { display: none; }
+    .chart-spinner { width: 22px; height: 22px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Favorites ── */
     .fav-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -110,7 +117,8 @@
     .fav-list { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
     .fav-btn { position: relative; min-height: 36px; padding: 0 14px; border-radius: 10px;
       border: 1px solid var(--border); background: var(--btn-bg); color: var(--text);
-      font-size: .88rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+      font-size: .88rem; font-weight: 600; cursor: pointer; transition: all .15s;
+      display: inline-flex; align-items: center; justify-content: center; }
     .fav-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
     .fav-del { position: absolute; top: -5px; right: -5px; width: 17px; height: 17px;
       border-radius: 50%; background: var(--red); color: #fff; border: none;
@@ -170,6 +178,36 @@
     .cur-chip-code { font-size: .85rem; font-weight: 700; }
     .cur-chip-name { font-size: .72rem; color: var(--muted); }
 
+    /* ── Info Modal ── */
+    .info-modal {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: min(100%, 580px); background: var(--modal-bg); border-top-left-radius: 20px;
+      border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
+      padding: 20px 20px 36px;
+    }
+    .info-modal.hidden { display: none; }
+    .info-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .info-card-header h3 { margin: 0; font-size: 1rem; }
+    .info-app-name {
+      text-align: center; margin-bottom: 20px;
+    }
+    .info-app-name .app-icon { font-size: 2.8rem; display: block; margin-bottom: 6px; }
+    .info-app-name .app-title { font-size: 1.1rem; font-weight: 800; }
+    .info-app-name .app-sub { font-size: .78rem; color: var(--muted); margin-top: 3px; }
+    .info-rows { display: grid; gap: 10px; }
+    .info-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+    }
+    .info-row-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .info-row-body { display: flex; flex-direction: column; gap: 1px; }
+    .info-row-label { font-size: .72rem; color: var(--muted); font-weight: 600; }
+    .info-row-value { font-size: .95rem; font-weight: 700; }
+    .info-row-value a { color: var(--accent); text-decoration: none; }
+    .info-row-value a:hover { text-decoration: underline; }
+    .info-footer { text-align: center; color: var(--muted); font-size: .74rem; margin-top: 16px; }
+
     /* ── Toast ── */
     .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
       background: var(--text); color: var(--bg); padding: 10px 20px; border-radius: 20px;
@@ -185,6 +223,203 @@
       .row { grid-template-columns: 1fr; gap: 5px; }
       .currency-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
     }
+
+    /* ── Bottom Nav ── */
+    body { padding-bottom: calc(68px + env(safe-area-inset-bottom, 6px)); }
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: min(100%, 580px); background: var(--panel); border-top: 1px solid var(--border);
+      display: flex; z-index: 30;
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
+    }
+    .nav-tab {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 9px 0 7px; border: none; background: none; color: var(--muted);
+      font-size: .68rem; font-weight: 700; cursor: pointer; transition: color .15s;
+    }
+    .nav-tab.active { color: var(--accent); }
+    .nav-tab .nav-icon { font-size: 1.5rem; line-height: 1; }
+
+    /* ── Receipt Scanner Page ── */
+    .receipt-page-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+    }
+    .scan-drop {
+      position: relative; border: 2px dashed var(--border); border-radius: 12px;
+      min-height: 160px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 8px; cursor: pointer; transition: all .2s;
+      background: var(--input-bg); overflow: hidden;
+    }
+    .scan-drop:hover, .scan-drop.drag-over { border-color: var(--accent); background: var(--accent-dim); }
+    #receiptPreview { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; }
+    .scan-ph { display: flex; flex-direction: column; align-items: center; gap: 8px;
+      color: var(--muted); font-size: .88rem; pointer-events: none; }
+    .scan-ph-icon { font-size: 2.8rem; }
+    .scan-row { display: flex; gap: 8px; margin-top: 10px; }
+    .primary-btn {
+      flex: 1; min-height: 46px; border-radius: 12px; border: none;
+      background: var(--accent); color: #fff; font-size: .88rem; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: opacity .15s;
+    }
+    .primary-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .outline-btn {
+      flex: 1; min-height: 46px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--btn-bg); color: var(--text);
+      font-size: .88rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .ocr-prog { display: none; margin-top: 10px; }
+    .ocr-prog.show { display: block; }
+    .prog-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .prog-fill { height: 100%; background: var(--accent); border-radius: 3px; width: 0%; transition: width .3s; }
+    .prog-lbl { font-size: .76rem; color: var(--muted); margin-top: 4px; text-align: center; }
+
+    /* ── Receipt Form ── */
+    .rf { display: grid; gap: 9px; margin-top: 14px; }
+    .rf-row { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }
+    .rf-lbl { font-size: .82rem; font-weight: 700; color: var(--muted); }
+    .rf-inp, .rf-sel {
+      width: 100%; min-height: 46px; border-radius: 11px; border: 1px solid var(--border);
+      background: var(--input-bg); color: var(--text); font-size: .95rem;
+      padding: 0 12px; outline: none; font-family: inherit;
+    }
+    .rf-inp:focus, .rf-sel:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .rf-sel {
+      cursor: pointer; -webkit-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238892a4' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
+    }
+    .rf-inp.hl { border-color: var(--green) !important; box-shadow: 0 0 0 3px rgba(74,222,128,.15); }
+    .rf-sel.hl { border-color: var(--green) !important; }
+    .krw-box {
+      min-height: 46px; border-radius: 11px; border: 1px solid var(--border);
+      background: var(--panel-2); display: flex; align-items: center; padding: 0 12px;
+      font-weight: 700; color: var(--accent); font-size: 1rem;
+    }
+    .big-btn {
+      width: 100%; min-height: 50px; border-radius: 13px; border: none;
+      background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
+      color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 6px;
+      transition: opacity .15s, transform .1s;
+    }
+    .big-btn:active { transform: scale(.98); }
+    .big-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Expenses Page ── */
+    .exp-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+    }
+    .exp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .exp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sm-btn {
+      min-height: 34px; padding: 0 11px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--btn-bg); color: var(--text);
+      font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .sm-btn:hover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+    .exp-summary { display: flex; gap: 8px; margin-bottom: 12px; }
+    .sum-c {
+      flex: 1; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .sum-c-lbl { font-size: .7rem; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+    .sum-c-val { font-size: .95rem; font-weight: 700; }
+    .exp-items { display: grid; gap: 8px; }
+    .ei {
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px;
+    }
+    .ei-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .ei-cat {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+      border-radius: 20px; font-size: .74rem; font-weight: 700;
+      background: var(--accent-dim); color: var(--accent);
+    }
+    .ei-user { font-size: .75rem; color: var(--muted); margin-top: 3px; }
+    .ei-del {
+      border: none; background: none; color: var(--muted); font-size: .85rem;
+      cursor: pointer; padding: 3px 7px; border-radius: 6px; flex-shrink: 0;
+    }
+    .ei-del:hover { color: var(--red); background: rgba(248,113,113,.1); }
+    .ei-amts { display: flex; justify-content: space-between; align-items: baseline; }
+    .ei-loc { font-size: 1rem; font-weight: 700; }
+    .ei-krw { font-size: .85rem; color: var(--accent); font-weight: 600; }
+    .ei-meta { font-size: .74rem; color: var(--muted); margin-top: 4px; }
+    .exp-empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: .88rem; line-height: 1.8; }
+
+    /* ── Supabase Config ── */
+    .sb-setup {
+      background: var(--panel-2); border: 1px dashed var(--border);
+      border-radius: 12px; padding: 12px; margin-bottom: 12px; display: none;
+      position: relative;
+    }
+    .sb-setup::before {
+      content: '🔒 개발자 전용';
+      position: absolute; top: -10px; left: 12px;
+      background: var(--panel-2); padding: 0 6px;
+      font-size: .65rem; color: var(--muted); font-weight: 700;
+    }
+    .sb-setup.open { display: grid; gap: 8px; }
+    .sb-f { display: grid; gap: 4px; }
+    .sb-f label { font-size: .75rem; color: var(--muted); font-weight: 600; }
+    .sb-f input {
+      width: 100%; min-height: 38px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--input-bg); color: var(--text); font-size: .8rem;
+      padding: 0 10px; outline: none; font-family: inherit;
+    }
+    .sb-f input:focus { border-color: var(--accent); }
+    .sb-save {
+      min-height: 38px; border-radius: 9px; border: none;
+      background: var(--accent); color: #fff; font-size: .85rem; font-weight: 700; cursor: pointer;
+    }
+    .sb-ind { display: flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted); margin-bottom: 8px; }
+    .sb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .sb-dot.on { background: var(--green); }
+    .sb-dot.er { background: var(--red); }
+    .sb-schema {
+      background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-family: "Consolas", monospace; font-size: .7rem; color: var(--muted);
+      white-space: pre; overflow-x: auto; margin-top: 6px; line-height: 1.7;
+    }
+    details summary { cursor: pointer; font-size: .76rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── Payment badge ── */
+    .pm-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: .72rem; font-weight: 700; }
+    .pm-현금      { background: rgba(251,146,60,.15);  color: #fb923c; }
+    .pm-법인카드  { background: rgba(94,161,255,.15);  color: var(--accent); }
+    .pm-개인카드  { background: rgba(167,139,250,.15); color: #a78bfa; }
+
+    /* ── Reimburse toggle ── */
+    .reimb-btn {
+      border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px;
+      font-size: .72rem; font-weight: 700; cursor: pointer; background: var(--btn-bg);
+      color: var(--muted); transition: all .15s; white-space: nowrap;
+    }
+    .reimb-btn.done { background: rgba(74,222,128,.12); color: var(--green); border-color: rgba(74,222,128,.4); }
+    .ei-badges { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
+    .ei-location { font-size: .83rem; font-weight: 600; color: var(--text); margin-top: 2px; }
+
+    /* ── Expense filter ── */
+    .exp-filter { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 2px; }
+    .filter-btn {
+      min-height: 30px; padding: 0 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--btn-bg); color: var(--muted);
+      font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .filter-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+
+    /* ── KRW rate info ── */
+    .krw-rate-info { font-size: .74rem; color: var(--muted); margin-top: 3px; min-height: 1.1em; }
+
+    @media (max-width: 430px) {
+      .rf-row { grid-template-columns: 1fr; gap: 3px; }
+      .exp-summary { flex-wrap: wrap; }
+      .scan-row { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
@@ -193,6 +428,45 @@
 
   <!-- Overlay + Settings Modal -->
   <div id="overlay" class="overlay hidden"></div>
+
+  <!-- Info Modal -->
+  <div id="infoModal" class="info-modal hidden">
+    <div class="modal-handle"></div>
+    <div class="info-card-header">
+      <h3>개발자 정보</h3>
+      <button class="modal-close" id="closeInfo">✕</button>
+    </div>
+    <div class="info-app-name">
+      <span class="app-icon">💱</span>
+      <div class="app-title">실시간 환율 계산기</div>
+      <div class="app-sub">영수증 스캐너 &amp; 지출 관리 PWA</div>
+    </div>
+    <div class="info-rows">
+      <div class="info-row">
+        <span class="info-row-icon">👤</span>
+        <div class="info-row-body">
+          <span class="info-row-label">개발자</span>
+          <span class="info-row-value">백승민</span>
+        </div>
+      </div>
+      <div class="info-row">
+        <span class="info-row-icon">📞</span>
+        <div class="info-row-body">
+          <span class="info-row-label">전화번호</span>
+          <span class="info-row-value"><a href="tel:01066230595">010-6623-0595</a></span>
+        </div>
+      </div>
+      <div class="info-row">
+        <span class="info-row-icon">✉️</span>
+        <div class="info-row-body">
+          <span class="info-row-label">이메일</span>
+          <span class="info-row-value"><a href="mailto:qortmdals28@naver.com">qortmdals28@naver.com</a></span>
+        </div>
+      </div>
+    </div>
+    <div class="info-footer">Made with ❤️ by 백승민</div>
+  </div>
+
   <div id="settingsModal" class="modal hidden">
     <div class="modal-handle"></div>
     <div class="modal-header">
@@ -213,6 +487,7 @@
       <div class="header-btns">
         <button class="icon-btn" id="themeBtn" title="테마 전환">🌙</button>
         <button class="icon-btn" id="settingsBtn" title="통화 설정">⚙️</button>
+        <button class="icon-btn" id="infoBtn" title="개발자 정보">ℹ️</button>
       </div>
     </header>
 
@@ -255,10 +530,183 @@
       </div>
       <div class="chart-wrap">
         <canvas id="rateChart"></canvas>
-        <div id="chartLoading" class="chart-loading hidden">불러오는 중...</div>
+        <div id="chartLoading" class="chart-loading hidden">
+          <div class="chart-spinner"></div>
+          <span>환율 데이터 불러오는 중...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Receipt Scanner Page ── -->
+    <section class="receipt-page-card" id="receiptPage" hidden>
+      <h2 class="card-title">🧾 영수증 스캐너</h2>
+
+      <!-- Camera / Drop Area -->
+      <div class="scan-drop" id="scanDrop">
+        <img id="receiptPreview" hidden />
+        <div class="scan-ph" id="scanPh">
+          <span class="scan-ph-icon">📷</span>
+          <span>여기를 눌러 사진 찍기</span>
+          <span style="font-size:.74rem;opacity:.7">찍는 즉시 자동으로 정보가 입력됩니다</span>
+        </div>
+      </div>
+      <input type="file" id="rfFileCamera" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="rfFileGallery" accept="image/*" style="display:none">
+
+      <div class="scan-row">
+        <button class="primary-btn" id="ocrScanBtn" disabled>🔄 다시 스캔</button>
+        <button class="outline-btn" id="galleryBtn">🖼️ 갤러리</button>
+      </div>
+
+      <div class="ocr-prog" id="ocrProg">
+        <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+        <div class="prog-lbl" id="progLbl">인식 중...</div>
+      </div>
+
+      <!-- Receipt Form -->
+      <div class="rf">
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfDate">📅 날짜</label>
+          <input class="rf-inp" type="date" id="rfDate" />
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfCategory">🏷️ 항목</label>
+          <select class="rf-sel" id="rfCategory">
+            <option value="식비">🍽️ 식비</option>
+            <option value="교통비">🚌 교통비</option>
+            <option value="숙박비">🏨 숙박비</option>
+            <option value="쇼핑">🛍️ 쇼핑</option>
+            <option value="관광/여가">🎡 관광/여가</option>
+            <option value="의료/약국">💊 의료/약국</option>
+            <option value="통신">📡 통신</option>
+            <option value="기타">📦 기타</option>
+          </select>
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfLocation">🏪 상호명</label>
+          <input class="rf-inp" type="text" id="rfLocation" placeholder="Spar, Lidl, 식당명..." />
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfCurrency">💱 통화</label>
+          <select class="rf-sel" id="rfCurrency">
+            <option value="HUF">HUF — 헝가리 포린트</option>
+            <option value="EUR">EUR — 유로</option>
+            <option value="USD">USD — 미국 달러</option>
+            <option value="JPY">JPY — 일본 엔</option>
+            <option value="GBP">GBP — 영국 파운드</option>
+            <option value="CNY">CNY — 중국 위안</option>
+            <option value="SGD">SGD — 싱가포르 달러</option>
+            <option value="AUD">AUD — 호주 달러</option>
+            <option value="CAD">CAD — 캐나다 달러</option>
+            <option value="THB">THB — 태국 바트</option>
+            <option value="KRW">KRW — 한국 원</option>
+          </select>
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfAmount">💰 금액</label>
+          <input class="rf-inp" type="number" id="rfAmount" inputmode="decimal" step="any" min="0" placeholder="0" />
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl">🇰🇷 원화</label>
+          <div>
+            <div class="krw-box" id="rfKrw">-</div>
+            <div class="krw-rate-info" id="rfRate"></div>
+          </div>
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfPayment">💳 결제</label>
+          <select class="rf-sel" id="rfPayment">
+            <option value="개인카드">💳 개인카드</option>
+            <option value="법인카드">💼 법인카드</option>
+            <option value="현금">💵 현금</option>
+          </select>
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfUser">👤 이름</label>
+          <input class="rf-inp" type="text" id="rfUser" placeholder="승민" />
+        </div>
+        <div class="rf-row">
+          <label class="rf-lbl" for="rfNote">📝 비고</label>
+          <input class="rf-inp" type="text" id="rfNote" placeholder="메모 (선택)" />
+        </div>
+        <button class="big-btn" id="saveReceiptBtn">💾 저장하기</button>
+      </div>
+    </section>
+
+    <!-- ── Expenses Page ── -->
+    <section class="exp-card" id="expensesPage" hidden>
+      <div class="exp-top">
+        <h2 class="card-title" style="margin:0">📊 지출 내역</h2>
+        <div class="exp-btns">
+          <button class="sm-btn" id="refreshExpBtn">🔄 새로고침</button>
+          <button class="sm-btn" id="csvBtn">⬇️ CSV</button>
+        </div>
+      </div>
+
+      <!-- Supabase Config Panel -->
+      <div class="sb-setup" id="sbSetup">
+        <div class="sb-f">
+          <label for="sbUrl">Supabase URL</label>
+          <input type="url" id="sbUrl" autocomplete="off" />
+        </div>
+        <div class="sb-f">
+          <label for="sbKey">Anon Key</label>
+          <input type="text" id="sbKey" autocomplete="off" />
+        </div>
+        <button class="sb-save" id="sbSaveBtn">연결 저장</button>
+      </div>
+
+      <!-- Supabase Status (연속 5탭으로 개발자 설정 열기) -->
+      <div class="sb-ind" id="sbInd">
+        <span class="sb-dot" id="sbDot"></span>
+        <span id="sbLabel">연결 확인 중...</span>
+      </div>
+
+      <!-- Summary -->
+      <div class="exp-summary">
+        <div class="sum-c">
+          <div class="sum-c-lbl">총 지출</div>
+          <div class="sum-c-val" id="expTotal">₩ 0</div>
+        </div>
+        <div class="sum-c">
+          <div class="sum-c-lbl">미정산</div>
+          <div class="sum-c-val" id="expUnpaid" style="color:var(--red)">₩ 0</div>
+        </div>
+        <div class="sum-c">
+          <div class="sum-c-lbl">건수</div>
+          <div class="sum-c-val" id="expCount">0건</div>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="exp-filter">
+        <button class="filter-btn active" data-filter="all">전체</button>
+        <button class="filter-btn" data-filter="unpaid">미정산만</button>
+        <button class="filter-btn" data-filter="paid">정산완료</button>
+        <button class="filter-btn" data-filter="법인카드">법인카드</button>
+        <button class="filter-btn" data-filter="개인카드">개인카드</button>
+        <button class="filter-btn" data-filter="현금">현금</button>
+      </div>
+
+      <!-- Expense Items -->
+      <div class="exp-items" id="expItems">
+        <div class="exp-empty">지출 내역이 없습니다.<br>영수증 탭에서 추가해 보세요!</div>
       </div>
     </section>
   </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-tab active" data-tab="home">
+      <span class="nav-icon">💱</span>환율
+    </button>
+    <button class="nav-tab" data-tab="receipt">
+      <span class="nav-icon">🧾</span>영수증
+    </button>
+    <button class="nav-tab" data-tab="expenses">
+      <span class="nav-icon">📊</span>지출내역
+    </button>
+  </nav>
 
   <script>
   (() => {
@@ -266,7 +714,8 @@
 
     // ── Constants ─────────────────────────────────────────
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
-    const HIST_API   = 'https://api.frankfurter.app';
+    // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
+    const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
     const REFRESH_MS = 10 * 60 * 1000;
 
     const CHART_COLORS = {
@@ -386,6 +835,14 @@
     }
     function closeSettings() {
       document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('overlay').classList.add('hidden');
+    }
+    function openInfo() {
+      document.getElementById('infoModal').classList.remove('hidden');
+      document.getElementById('overlay').classList.remove('hidden');
+    }
+    function closeInfo() {
+      document.getElementById('infoModal').classList.add('hidden');
       document.getElementById('overlay').classList.add('hidden');
     }
 
@@ -517,7 +974,14 @@
       const ctx = document.getElementById('rateChart').getContext('2d');
       chartInst = new Chart(ctx, {
         type: 'line',
-        data: { labels: [], datasets: [{ data: [], borderWidth: 2, fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 5 }] },
+        data: {
+          labels: [],
+          datasets: [{
+            data: [], borderWidth: 2, fill: true, tension: 0.35,
+            pointRadius: 0, pointHoverRadius: 5,
+            spanGaps: true,   // null 구간을 끊지 않고 이어서 그림
+          }]
+        },
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { intersect: false, mode: 'index' },
@@ -528,16 +992,27 @@
                 title: items => items[0]?.label || '',
                 label: item => {
                   const v = item.parsed.y;
+                  if (v == null) return '';
                   const dec = ALL[chartCode]?.int ? 0 : 2;
                   const formatted = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: dec }).format(v);
-                  return ` 1 ${chartCode} = ${formatted} ${widgetBase === 'KRW' ? 'KRW' : widgetBase}`;
+                  return ` 1 ${chartCode} = ${formatted} KRW`;
                 }
               }
             }
           },
           scales: {
-            x: { grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#8892a4', maxTicksLimit: 6, maxRotation: 0 } },
-            y: { position: 'right', grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#8892a4', maxTicksLimit: 5 } }
+            x: {
+              grid: { color: 'rgba(255,255,255,.05)' },
+              ticks: { color: '#8892a4', maxTicksLimit: 6, maxRotation: 0 }
+            },
+            y: {
+              position: 'right',
+              grid: { color: 'rgba(255,255,255,.05)' },
+              ticks: {
+                color: '#8892a4', maxTicksLimit: 5,
+                callback: v => fmtRate(v),
+              }
+            }
           }
         }
       });
@@ -546,59 +1021,116 @@
 
     async function fetchHistorical(days) {
       const today    = formatDate(new Date());
-      const cacheKey = `hist_${days}_${today}`;
-      // 오늘 날짜가 바뀌면 자동으로 새로 fetch (날짜가 key에 포함)
-      const cached = JSON.parse(lsGet(cacheKey) || 'null');
+      const cacheKey = `hist2_${days}_${today}`;          // 'hist2_' = 새 API 캐시
+      const cached   = JSON.parse(lsGet(cacheKey) || 'null');
       if (cached && (Date.now() - cached.ts) < 6 * 3600 * 1000) {
         histCache[days] = cached.data;
-        return;
+        return true;
       }
-      // 오늘부터 days+5일 전까지 요청 (주말·공휴일 제외해도 days개 이상 확보)
-      const end   = new Date();
-      const start = new Date(); start.setDate(start.getDate() - (days + 5));
-      const targets = Object.keys(ALL).filter(c => c !== 'USD').join(',');
+
+      // 주말·공휴일을 감안해 days + 4일치 날짜 목록 생성 (어제부터 역순)
+      const dates = [];
+      for (let i = 1; i <= days + 4; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dates.push(formatDate(d));
+      }
+
       try {
-        const url = `${HIST_API}/${formatDate(start)}..${formatDate(end)}?from=USD&to=${targets}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('hist api');
-        const json = await res.json();
-        histCache[days] = json.rates || {};
-        lsSet(cacheKey, JSON.stringify({ data: histCache[days], ts: Date.now() }));
-      } catch (_) {
-        histCache[days] = histCache[days] || {};
+        // 병렬로 날짜별 JSON 취득 (jsdelivr CDN — CORS 허용, 속도 빠름)
+        const results = await Promise.all(
+          dates.map(async date => {
+            try {
+              const url = HIST_BASE.replace('{DATE}', date);
+              const res = await fetch(url, { cache: 'force-cache' });
+              if (!res.ok) return null;
+              const json = await res.json();
+              if (!json.usd) return null;
+              // 소문자 코드 → 대문자, USD 기준 각 통화 비율 저장
+              const dayRates = {};
+              Object.keys(ALL).forEach(code => {
+                const v = json.usd[code.toLowerCase()];
+                if (v) dayRates[code] = v;
+              });
+              return Object.keys(dayRates).length ? { date, dayRates } : null;
+            } catch { return null; }
+          })
+        );
+
+        const data = {};
+        results.filter(Boolean).forEach(({ date, dayRates }) => { data[date] = dayRates; });
+
+        if (Object.keys(data).length === 0) throw new Error('no data');
+        histCache[days] = data;
+        lsSet(cacheKey, JSON.stringify({ data, ts: Date.now() }));
+        return true;
+      } catch (err) {
+        console.warn('fetchHistorical 실패:', err.message);
+        if (cached?.data) { histCache[days] = cached.data; return true; }
+        histCache[days] = null;
+        return false;
       }
     }
 
     async function selectChartCode(code) {
       chartCode = code;
       renderWidgetList();
-      document.getElementById('chartTitle').textContent = `1 ${code} → KRW (${chartDays}일)`;
-      document.getElementById('chartLoading').classList.remove('hidden');
-      if (!histCache[chartDays]) await fetchHistorical(chartDays);
-      document.getElementById('chartLoading').classList.add('hidden');
+      const loadEl = document.getElementById('chartLoading');
+      const titleEl = document.getElementById('chartTitle');
+      titleEl.textContent = `📈 1 ${code} → KRW (${chartDays}일) 로딩 중...`;
+      loadEl.classList.remove('hidden');
+
+      const ok = await fetchHistorical(chartDays);
+
+      loadEl.classList.add('hidden');
+      if (!ok || !histCache[chartDays]) {
+        titleEl.textContent = `⚠️ 차트 데이터를 불러오지 못했습니다`;
+        // 빈 차트
+        chartInst.data.labels   = [];
+        chartInst.data.datasets[0].data = [];
+        chartInst.update();
+        return;
+      }
       drawChart();
     }
 
     function drawChart() {
       if (!chartInst || !chartCode) return;
-      const data = histCache[chartDays] || {};
-      const dates = Object.keys(data).sort().slice(-chartDays);
+      const data  = histCache[chartDays];
+      if (!data)  return;
+
+      const dates  = Object.keys(data).sort().slice(-chartDays);
       const values = dates.map(d => {
         const r = data[d];
         if (!r || !r.KRW || !r[chartCode]) return null;
-        return r.KRW / r[chartCode];
+        return parseFloat((r.KRW / r[chartCode]).toFixed(4));
       });
+
+      // 유효 데이터가 하나도 없으면 메시지 표시
+      const hasData = values.some(v => v !== null);
+      if (!hasData) {
+        document.getElementById('chartTitle').textContent = `⚠️ ${chartCode} 데이터가 없습니다`;
+        return;
+      }
+
       const color = CHART_COLORS[chartCode] || '#5ea1ff';
-      const ctx = document.getElementById('rateChart').getContext('2d');
-      const grad = ctx.createLinearGradient(0, 0, 0, 160);
-      grad.addColorStop(0, color + '44');
+      const ctx   = document.getElementById('rateChart').getContext('2d');
+      const h     = ctx.canvas.clientHeight || 160;
+      const grad  = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, color + '55');
       grad.addColorStop(1, color + '00');
-      chartInst.data.labels = dates;
-      chartInst.data.datasets[0].data = values;
-      chartInst.data.datasets[0].borderColor = color;
-      chartInst.data.datasets[0].backgroundColor = grad;
+
+      chartInst.data.labels                        = dates;
+      chartInst.data.datasets[0].data              = values;
+      chartInst.data.datasets[0].borderColor       = color;
+      chartInst.data.datasets[0].backgroundColor   = grad;
+      chartInst.data.datasets[0].spanGaps          = true;
       chartInst.update();
-      document.getElementById('chartTitle').textContent = `1 ${chartCode} → KRW (${chartDays}일)`;
+
+      const min = Math.min(...values.filter(Boolean));
+      const max = Math.max(...values.filter(Boolean));
+      document.getElementById('chartTitle').textContent =
+        `1 ${chartCode} → KRW  ${chartDays}일  (${fmtRate(min)} ~ ${fmtRate(max)})`;
     }
 
     // ── Favorites ─────────────────────────────────────────
@@ -781,7 +1313,9 @@
       });
       document.getElementById('settingsBtn').addEventListener('click', openSettings);
       document.getElementById('closeSettings').addEventListener('click', closeSettings);
-      document.getElementById('overlay').addEventListener('click', closeSettings);
+      document.getElementById('overlay').addEventListener('click', () => { closeSettings(); closeInfo(); });
+      document.getElementById('infoBtn').addEventListener('click', openInfo);
+      document.getElementById('closeInfo').addEventListener('click', closeInfo);
       document.getElementById('favEditBtn').addEventListener('click', () => {
         favEditMode = !favEditMode;
         document.getElementById('favEditBtn').textContent = favEditMode ? '완료' : '편집';
@@ -810,6 +1344,574 @@
       });
     }
 
+    // ── Receipt Scanner & Expense Manager ─────────────────
+
+    // Hard-coded Supabase credentials (override via UI if needed)
+    const SB_DEFAULT_URL = 'https://qvnbfccbdqqpfribevss.supabase.co';
+    const SB_DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2bmJmY2NiZHFxcGZyaWJldnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODAyOTEsImV4cCI6MjA5MTY1NjI5MX0._Cmmq88lumKzmbDmW0E1sLR66HkcnIegmHrOtXVKFe8';
+    const SB_URL_KEY = 'sbUrl';
+    const SB_KEY_KEY = 'sbKey';
+    let supaClient = null;
+
+    function initSB() {
+      // Use stored value, or fall back to hard-coded default
+      const url = lsGet(SB_URL_KEY) || SB_DEFAULT_URL;
+      const key = lsGet(SB_KEY_KEY) || SB_DEFAULT_KEY;
+      if (url && key && typeof supabase !== 'undefined') {
+        try { supaClient = supabase.createClient(url, key); return true; }
+        catch(_) { supaClient = null; }
+      }
+      return false;
+    }
+
+    // Page navigation
+    let activePage = 'home';
+
+    function switchPage(page) {
+      activePage = page;
+      ['.widget-card','.fav-card','.calc-card','.chart-card'].forEach(s => {
+        const el = document.querySelector(s);
+        if (el) el.hidden = page !== 'home';
+      });
+      document.getElementById('receiptPage').hidden  = page !== 'receipt';
+      document.getElementById('expensesPage').hidden = page !== 'expenses';
+      document.querySelectorAll('.nav-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.tab === page)
+      );
+      if (page === 'expenses') loadExpenses();
+    }
+
+    // Offline-first local storage
+    let localExpenses = JSON.parse(lsGet('localExpenses') || '[]');
+
+    // OCR state
+    let receiptFile = null;
+
+    function handleFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      receiptFile = file;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const prev = document.getElementById('receiptPreview');
+        prev.src = e.target.result;
+        prev.hidden = false;
+        document.getElementById('scanPh').hidden = true;
+        document.getElementById('ocrScanBtn').disabled = false;
+        // 사진 선택 즉시 자동 스캔 시작
+        runOCR();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function runOCR() {
+      if (!receiptFile) return;
+      if (typeof Tesseract === 'undefined') {
+        showToast('Tesseract.js 로딩 중입니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      const btn  = document.getElementById('ocrScanBtn');
+      const prog = document.getElementById('ocrProg');
+      const fill = document.getElementById('progFill');
+      const lbl  = document.getElementById('progLbl');
+      btn.disabled = true;
+      prog.classList.add('show');
+      fill.style.width = '5%';
+      lbl.textContent  = 'OCR 초기화 중...';
+      try {
+        const { data: { text } } = await Tesseract.recognize(receiptFile, 'eng', {
+          logger: m => {
+            const map = {
+              'loading tesseract core'      : ['12%', '엔진 로딩 중...'],
+              'initializing tesseract'      : ['25%', '초기화 중...'],
+              'loading language traineddata': ['45%', '언어 모델 로딩 중...'],
+              'initializing api'            : ['60%', 'API 준비 중...'],
+              'recognizing text'            : [
+                Math.round((m.progress || 0) * 40 + 60) + '%',
+                `텍스트 인식 중... ${Math.round((m.progress || 0) * 100)}%`
+              ],
+            };
+            const r = map[m.status];
+            if (r) { fill.style.width = r[0]; lbl.textContent = r[1]; }
+          }
+        });
+        fill.style.width = '100%';
+        lbl.textContent  = '✅ 완료!';
+        const parsed = parseReceiptText(text);
+        autoFillForm(parsed);
+        // 어떤 항목이 추출됐는지 토스트로 안내
+        const filled = [
+          parsed.date     && '날짜',
+          parsed.location && '상호명',
+          parsed.currency && '통화',
+          parsed.amount   != null && '금액',
+        ].filter(Boolean);
+        showToast(filled.length
+          ? `✅ 자동 입력: ${filled.join(' · ')}`
+          : '✅ 스캔 완료 (추출 정보 없음 — 직접 입력 필요)');
+      } catch(e) {
+        lbl.textContent = 'OCR 오류: ' + (e.message || '실패');
+        showToast('OCR 스캔 실패');
+      }
+      btn.disabled = false;
+      setTimeout(() => prog.classList.remove('show'), 3000);
+    }
+
+    // 헝가리/유럽 주요 상점명 키워드
+    const KNOWN_STORES = [
+      'SPAR','INTERSPAR','LIDL','ALDI','TESCO','PENNY','AUCHAN','CBA','COOP',
+      'ROSSMANN','DM ','MÜLLER','IKEA','DECATHLON','MCDONALD','KFC','BURGER KING',
+      'SUBWAY','STARBUCKS','PIZZA','POSTA','OTP','K&H','ERSTE','SHELL','MOL ',
+      'BP ','OMV','EURONICS','MEDIA MARKT','H&M','ZARA',
+    ];
+
+    function parseReceiptText(text) {
+      const out = { date: '', amount: null, currency: '', location: '' };
+      const upper = text.toUpperCase();
+      const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      // ── 날짜 ──────────────────────────────────────────────
+      const dps = [
+        [/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/,
+          m => `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`],
+        [/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/,
+          m => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`],
+        [/(\d{4})(\d{2})(\d{2})(?!\d)/,
+          m => `${m[1]}-${m[2]}-${m[3]}`],
+      ];
+      for (const [re, fmt] of dps) {
+        const m = text.match(re); if (m) { out.date = fmt(m); break; }
+      }
+
+      // ── 통화 ──────────────────────────────────────────────
+      const CODES = ['HUF','EUR','USD','JPY','GBP','CNY','SGD','AUD','CAD','THB','KRW'];
+      for (const c of CODES) {
+        if (new RegExp(`\\b${c}\\b`).test(text)) { out.currency = c; break; }
+      }
+      if (!out.currency) {
+        for (const [s, c] of [['€','EUR'],['£','GBP'],['¥','JPY'],['₩','KRW']]) {
+          if (text.includes(s)) { out.currency = c; break; }
+        }
+      }
+      if (!out.currency && /\bFt\b/.test(text)) out.currency = 'HUF';
+
+      // ── 금액 (최댓값 = 합계) ───────────────────────────────
+      const nums = [...text.matchAll(/\b\d[\d,]*(?:\.\d+)?\b/g)]
+        .map(m => parseFloat(m[0].replace(/,/g,'')))
+        .filter(n => isFinite(n) && n > 0 && n < 1e8);
+      if (nums.length) out.amount = Math.max(...nums);
+
+      // ── 상호명 ────────────────────────────────────────────
+      // 1순위: 알려진 상점 키워드 매칭
+      for (const store of KNOWN_STORES) {
+        if (upper.includes(store)) {
+          // 해당 키워드가 포함된 줄 추출
+          const matchLine = lines.find(l => l.toUpperCase().includes(store.trim()));
+          if (matchLine) {
+            out.location = matchLine.replace(/[^\w\sÀ-žÁáÉéÍíÓóÖöŐőÚúÜüŰű&.,\-]/g, '').trim().slice(0, 40);
+            break;
+          }
+        }
+      }
+      // 2순위: 영수증 상단 첫 줄 중 텍스트가 많은 줄 (숫자만 있는 줄 제외)
+      if (!out.location) {
+        const candidate = lines.slice(0, 6).find(l =>
+          l.length >= 3 &&                        // 너무 짧지 않고
+          !/^\d[\d\s\.,]*$/.test(l) &&            // 숫자만 있는 줄 아니고
+          !/^(TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT)/i.test(l) // 전화/URL/세금 아닌 줄
+        );
+        if (candidate) out.location = candidate.slice(0, 40);
+      }
+
+      return out;
+    }
+
+    function autoFillForm({ date, amount, currency, location }) {
+      function hl(id) {
+        const el = document.getElementById(id);
+        if (!el) return el;
+        el.classList.add('hl');
+        setTimeout(() => el.classList.remove('hl'), 2500);
+        return el;
+      }
+      if (date)     hl('rfDate').value = date;
+      if (location) hl('rfLocation').value = location;
+      if (currency) {
+        const sel = document.getElementById('rfCurrency');
+        if ([...sel.options].some(o => o.value === currency)) { sel.value = currency; hl('rfCurrency'); }
+      }
+      if (amount != null) hl('rfAmount').value = amount;
+      calcKRW();
+    }
+
+    // Calculate and display KRW conversion + exchange rate
+    function calcKRW() {
+      const amt   = parseFloat(document.getElementById('rfAmount').value);
+      const cur   = document.getElementById('rfCurrency').value;
+      const box   = document.getElementById('rfKrw');
+      const rateEl = document.getElementById('rfRate');
+      const rates = usdRates || JSON.parse(lsGet('ratesCache') || 'null')?.rates;
+
+      if (rates && rates[cur] && rates['KRW']) {
+        const rate = rates['KRW'] / rates[cur]; // 1 cur = ? KRW
+        rateEl.textContent = `1 ${cur} ≈ ${fmtRate(rate)}`;
+        if (isFinite(amt) && amt > 0) {
+          box.textContent = '₩ ' + fmtDisp(Math.round(amt * rate), 'KRW');
+        } else {
+          box.textContent = '-';
+        }
+      } else {
+        box.textContent  = '⚠️ 환율 없음';
+        rateEl.textContent = '오프라인 상태일 수 있습니다';
+      }
+    }
+
+    // Get exchange rate (1 unit of currency → KRW)
+    function getExchangeRate(currency) {
+      const rates = usdRates || JSON.parse(lsGet('ratesCache') || 'null')?.rates;
+      if (!rates || !rates[currency] || !rates['KRW']) return null;
+      return rates['KRW'] / rates[currency];
+    }
+
+    async function saveReceipt() {
+      const receiptDate   = document.getElementById('rfDate').value;
+      const category      = document.getElementById('rfCategory').value;
+      const locationName  = document.getElementById('rfLocation').value.trim();
+      const currency      = document.getElementById('rfCurrency').value;
+      const amtRaw        = parseFloat(document.getElementById('rfAmount').value);
+      const paymentMethod = document.getElementById('rfPayment').value;
+      const userName      = document.getElementById('rfUser').value.trim() || '승민';
+      const note          = document.getElementById('rfNote').value.trim();
+
+      if (!receiptDate)                      { showToast('📅 날짜를 입력해 주세요'); return; }
+      if (!isFinite(amtRaw) || amtRaw <= 0) { showToast('💰 금액을 입력해 주세요'); return; }
+
+      const exchangeRate = getExchangeRate(currency);
+      const amtKrw = exchangeRate ? Math.round(amtRaw * exchangeRate) : null;
+
+      const record = {
+        receipt_date   : receiptDate,
+        category,
+        amount_local   : amtRaw,
+        currency,
+        exchange_rate  : exchangeRate ? Math.round(exchangeRate * 10000) / 10000 : null,
+        amount_krw     : amtKrw,
+        payment_method : paymentMethod,
+        user_name      : userName,
+        location_name  : locationName || null,
+        note           : note || null,
+        image_url      : null,
+        is_reimbursed  : false,
+      };
+
+      // Offline-first: always save locally
+      const localRec = {
+        ...record,
+        id        : 'local_' + Date.now(),
+        created_at: new Date().toISOString(),
+        _local    : true,
+      };
+      localExpenses.unshift(localRec);
+      lsSet('localExpenses', localExpenses);
+
+      // Then try Supabase
+      let cloud = false;
+      if (supaClient) {
+        try {
+          const { error } = await supaClient.from('receipts').insert([record]);
+          if (!error) {
+            cloud = true;
+            localExpenses = localExpenses.filter(e => e.id !== localRec.id);
+            lsSet('localExpenses', localExpenses);
+          }
+        } catch(_) {}
+      }
+
+      showToast(cloud ? '☁️ Supabase에 저장됨!' : '💾 로컬에 저장됨');
+      resetReceiptForm();
+    }
+
+    function resetReceiptForm() {
+      receiptFile = null;
+      const prev = document.getElementById('receiptPreview');
+      prev.hidden = true; prev.src = '';
+      document.getElementById('scanPh').hidden = false;
+      document.getElementById('ocrScanBtn').disabled = true;
+      document.getElementById('rfDate').value         = new Date().toISOString().split('T')[0];
+      document.getElementById('rfCategory').value     = '식비';
+      document.getElementById('rfLocation').value     = '';
+      document.getElementById('rfCurrency').value     = 'HUF';
+      document.getElementById('rfAmount').value       = '';
+      document.getElementById('rfPayment').value      = '개인카드';
+      document.getElementById('rfUser').value         = '승민';
+      document.getElementById('rfNote').value         = '';
+      document.getElementById('rfKrw').textContent    = '-';
+      document.getElementById('rfRate').textContent   = '';
+    }
+
+    // ── Expense List ──────────────────────────────────────
+    let expenses   = [];
+    let expFilter  = 'all';
+
+    async function loadExpenses() {
+      expenses = [];
+
+      if (supaClient) {
+        try {
+          const { data, error } = await supaClient
+            .from('receipts')
+            .select('*')
+            .order('receipt_date', { ascending: false })
+            .limit(500);
+          if (!error && data) expenses = data;
+        } catch(_) {}
+      }
+
+      if (expenses.length === 0) {
+        expenses = [...localExpenses];
+      } else {
+        const cloudIds  = new Set(expenses.map(e => String(e.id)));
+        const onlyLocal = localExpenses.filter(e => e._local && !cloudIds.has(String(e.id)));
+        expenses = [...onlyLocal, ...expenses];
+      }
+      renderExpenses();
+    }
+
+    const CAT_EMOJI = {
+      '식비':'🍽️','교통비':'🚌','숙박비':'🏨','쇼핑':'🛍️',
+      '관광/여가':'🎡','의료/약국':'💊','통신':'📡','기타':'📦'
+    };
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function renderExpenses() {
+      const el = document.getElementById('expItems');
+
+      // Filter
+      const filtered = expenses.filter(e => {
+        if (expFilter === 'unpaid')   return !e.is_reimbursed;
+        if (expFilter === 'paid')     return  e.is_reimbursed;
+        if (expFilter === '법인카드') return e.payment_method === '법인카드';
+        if (expFilter === '개인카드') return e.payment_method === '개인카드';
+        if (expFilter === '현금')     return e.payment_method === '현금';
+        return true;
+      });
+
+      // Summary (always over ALL expenses, not filtered)
+      const total  = expenses.reduce((s, e) => s + (e.amount_krw || 0), 0);
+      const unpaid = expenses.filter(e => !e.is_reimbursed)
+                             .reduce((s, e) => s + (e.amount_krw || 0), 0);
+      document.getElementById('expTotal').textContent  = '₩ ' + fmtDisp(total,  'KRW');
+      document.getElementById('expUnpaid').textContent = '₩ ' + fmtDisp(unpaid, 'KRW');
+      document.getElementById('expCount').textContent  = expenses.length + '건';
+
+      if (!filtered.length) {
+        el.innerHTML = '<div class="exp-empty">조건에 맞는 지출 내역이 없습니다.</div>';
+        return;
+      }
+
+      el.innerHTML = filtered.map((e, i) => {
+        const em    = CAT_EMOJI[e.category] || '📦';
+        const src   = e._local ? '🔵 로컬' : '☁️ 클라우드';
+        const loc   = isFinite(e.amount_local) ? fmtDisp(e.amount_local, e.currency) : '?';
+        const pm    = e.payment_method || '카드';
+        const reimb = e.is_reimbursed;
+        const rate  = e.exchange_rate
+          ? `<span style="font-size:.72rem;color:var(--muted)">1 ${e.currency} = ${fmtRate(e.exchange_rate)}</span>`
+          : '';
+        return `<div class="ei" data-id="${e.id}" data-local="${!!e._local}">
+          <div class="ei-top">
+            <div>
+              <span class="ei-cat">${em} ${escHtml(e.category || '기타')}</span>
+              ${e.location_name ? `<div class="ei-location">🏪 ${escHtml(e.location_name)}</div>` : ''}
+              ${e.user_name     ? `<div class="ei-user">👤 ${escHtml(e.user_name)}</div>` : ''}
+            </div>
+            <button class="ei-del" data-idx="${i}" title="삭제">✕</button>
+          </div>
+          <div class="ei-amts">
+            <span class="ei-loc">${loc} ${escHtml(e.currency || '')}</span>
+            ${e.amount_krw ? `<span class="ei-krw">≈ ₩${fmtDisp(e.amount_krw, 'KRW')}</span>` : ''}
+          </div>
+          <div class="ei-meta">📅 ${e.receipt_date || e.date || '-'}${e.note ? ' · ' + escHtml(e.note) : ''} · ${src}</div>
+          <div class="ei-badges">
+            <span class="pm-badge pm-${escHtml(pm)}">${escHtml(pm)}</span>
+            ${rate}
+            <button class="reimb-btn ${reimb ? 'done' : ''}" data-idx="${i}">
+              ${reimb ? '✅ 정산완료' : '⬜ 미정산'}
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('.ei-del').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const idx = +btn.dataset.idx;
+          const realIdx = expenses.indexOf(filtered[idx]);
+          deleteExpense(realIdx);
+        })
+      );
+      el.querySelectorAll('.reimb-btn').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const e = filtered[+btn.dataset.idx];
+          if (e) toggleReimbursed(e);
+        })
+      );
+    }
+
+    async function toggleReimbursed(e) {
+      const newVal = !e.is_reimbursed;
+      e.is_reimbursed = newVal;
+
+      if (e._local) {
+        const le = localExpenses.find(l => l.id === e.id);
+        if (le) le.is_reimbursed = newVal;
+        lsSet('localExpenses', localExpenses);
+      } else if (supaClient && e.id) {
+        try { await supaClient.from('receipts').update({ is_reimbursed: newVal }).eq('id', e.id); }
+        catch(_) {}
+      }
+      renderExpenses();
+      showToast(newVal ? '✅ 정산완료 처리됨' : '↩️ 미정산으로 변경됨');
+    }
+
+    async function deleteExpense(idx) {
+      const e = expenses[idx];
+      if (!e) return;
+      if (!confirm(`"${e.category}${e.location_name ? ' · ' + e.location_name : ''}" 항목을 삭제할까요?`)) return;
+      if (e._local) {
+        localExpenses = localExpenses.filter(l => l.id !== e.id);
+        lsSet('localExpenses', localExpenses);
+      } else if (supaClient && e.id) {
+        try { await supaClient.from('receipts').delete().eq('id', e.id); } catch(_) {}
+      }
+      expenses.splice(idx, 1);
+      renderExpenses();
+    }
+
+    function exportCSV() {
+      if (!expenses.length) { showToast('내보낼 내역이 없습니다'); return; }
+      const hdr = ['날짜','항목','상호명','현지금액','통화','적용환율','원화금액','결제수단','이름','비고','정산여부'];
+      const rows = expenses.map(e => [
+        e.receipt_date || e.date || '',
+        e.category          || '',
+        e.location_name     || '',
+        e.amount_local      || '',
+        e.currency          || '',
+        e.exchange_rate     || '',
+        e.amount_krw        || '',
+        e.payment_method    || '',
+        e.user_name         || '',
+        e.note              || '',
+        e.is_reimbursed ? '정산완료' : '미정산',
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+      const csv  = '\uFEFF' + [hdr.join(','), ...rows].join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `지출내역_${new Date().toISOString().slice(0,10)}.csv`
+      });
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('📥 CSV 다운로드 완료');
+    }
+
+    function updateSbUI(status) {
+      const dot = document.getElementById('sbDot');
+      const lbl = document.getElementById('sbLabel');
+      dot.className = 'sb-dot' + (status === 'on' ? ' on' : status === 'er' ? ' er' : '');
+      lbl.textContent =
+        status === 'on' ? '✅ Supabase 연결됨' :
+        status === 'er' ? '❌ 연결 오류' :
+        '⏳ 연결 중...';
+    }
+
+    function initReceiptPage() {
+      // Auto-init Supabase with defaults
+      if (!lsGet(SB_URL_KEY)) lsSet(SB_URL_KEY, SB_DEFAULT_URL);
+      if (!lsGet(SB_KEY_KEY)) lsSet(SB_KEY_KEY, SB_DEFAULT_KEY);
+      const sbOk = initSB();
+      updateSbUI(sbOk ? 'on' : 'er');
+
+      // Pre-fill config UI
+      document.getElementById('sbUrl').value = lsGet(SB_URL_KEY) || '';
+      document.getElementById('sbKey').value = lsGet(SB_KEY_KEY) || '';
+
+      // Defaults for form
+      document.getElementById('rfDate').value    = new Date().toISOString().split('T')[0];
+      document.getElementById('rfUser').value    = '승민';
+      document.getElementById('rfPayment').value = '개인카드';
+
+      // Bottom nav
+      document.querySelectorAll('.nav-tab').forEach(t =>
+        t.addEventListener('click', () => switchPage(t.dataset.tab))
+      );
+
+      // Scan area
+      const drop  = document.getElementById('scanDrop');
+      const camIn = document.getElementById('rfFileCamera');
+      const galIn = document.getElementById('rfFileGallery');
+      drop.addEventListener('click', () => camIn.click());
+      document.getElementById('galleryBtn').addEventListener('click', e => { e.stopPropagation(); galIn.click(); });
+      camIn.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); camIn.value = ''; });
+      galIn.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); galIn.value = ''; });
+      drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag-over'); });
+      drop.addEventListener('dragleave', ()  => drop.classList.remove('drag-over'));
+      drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+      // OCR
+      document.getElementById('ocrScanBtn').addEventListener('click', e => { e.stopPropagation(); runOCR(); });
+
+      // Live KRW calc
+      document.getElementById('rfAmount').addEventListener('input', calcKRW);
+      document.getElementById('rfCurrency').addEventListener('change', calcKRW);
+
+      // Save
+      document.getElementById('saveReceiptBtn').addEventListener('click', saveReceipt);
+
+      // Expense controls
+      // 연결 상태 영역 5연속 탭 → 개발자 설정 패널 열기
+      let _devTapCount = 0, _devTapTimer = null;
+      document.getElementById('sbInd').addEventListener('click', () => {
+        _devTapCount++;
+        clearTimeout(_devTapTimer);
+        _devTapTimer = setTimeout(() => { _devTapCount = 0; }, 2000);
+        if (_devTapCount >= 5) {
+          _devTapCount = 0;
+          const panel = document.getElementById('sbSetup');
+          panel.classList.toggle('open');
+          if (panel.classList.contains('open')) showToast('🔧 개발자 설정');
+        }
+      });
+      document.getElementById('sbSaveBtn').addEventListener('click', () => {
+        const url = document.getElementById('sbUrl').value.trim();
+        const key = document.getElementById('sbKey').value.trim();
+        if (!url || !key) { showToast('URL과 Key를 모두 입력해 주세요'); return; }
+        lsSet(SB_URL_KEY, url); lsSet(SB_KEY_KEY, key);
+        const ok = initSB();
+        updateSbUI(ok ? 'on' : 'er');
+        document.getElementById('sbSetup').classList.remove('open');
+        showToast(ok ? '✅ Supabase 연결 완료!' : '❌ 연결 실패');
+        if (ok) loadExpenses();
+      });
+      document.getElementById('refreshExpBtn').addEventListener('click', loadExpenses);
+      document.getElementById('csvBtn').addEventListener('click', exportCSV);
+
+      // Filter buttons
+      document.querySelectorAll('.filter-btn').forEach(btn =>
+        btn.addEventListener('click', () => {
+          expFilter = btn.dataset.filter;
+          document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+          renderExpenses();
+        })
+      );
+
+      // Load expenses if Supabase is connected
+      if (sbOk) loadExpenses();
+    }
+
     // ── Init ──────────────────────────────────────────────
     function init() {
       applyTheme();
@@ -820,6 +1922,7 @@
       renderFavorites();
       initChart();
       bindAll();
+      initReceiptPage();
 
       const stored = JSON.parse(lsGet('ratesCache') || 'null');
       if (stored?.rates) {
