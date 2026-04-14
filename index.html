@@ -268,7 +268,10 @@
       background: var(--input-bg); overflow: hidden;
     }
     .scan-drop:hover, .scan-drop.drag-over { border-color: var(--accent); background: var(--accent-dim); }
-    #receiptPreview { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; }
+    /* 사진이 로드된 상태 */
+    .scan-drop.has-photo { border-style: solid; border-color: var(--accent); cursor: default; min-height: unset; }
+    .scan-drop.has-photo:hover { background: var(--input-bg); border-color: var(--accent); }
+    #receiptPreview { max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px; display: block; }
     .scan-ph { display: flex; flex-direction: column; align-items: center; gap: 8px;
       color: var(--muted); font-size: .88rem; pointer-events: none; }
     .scan-ph-icon { font-size: 2.8rem; }
@@ -1499,7 +1502,21 @@
     // OCR state
     let receiptFile = null;
 
-    function handleFile(file) {
+    function savePhotoToDevice(file) {
+      try {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        a.download = `영수증_${ts}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+        showToast('📥 사진이 다운로드 폴더에 저장됐습니다');
+      } catch(e) { /* 저장 불가 환경 무시 */ }
+    }
+
+    function handleFile(file, saveToGallery = false) {
       if (!file || !file.type.startsWith('image/')) return;
       receiptFile = file;
       const reader = new FileReader();
@@ -1508,11 +1525,51 @@
         prev.src = e.target.result;
         prev.hidden = false;
         document.getElementById('scanPh').hidden = true;
+        document.getElementById('scanDrop').classList.add('has-photo');
         document.getElementById('ocrScanBtn').disabled = false;
+        // 카메라 촬영 사진은 갤러리(다운로드)에도 저장
+        if (saveToGallery) savePhotoToDevice(file);
         // 사진 선택 즉시 자동 스캔 시작
         runOCR();
       };
       reader.readAsDataURL(file);
+    }
+
+    // OCR 전 이미지 전처리: 그레이스케일 변환 + 대비 강화
+    function preprocessForOCR(file) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          // 장축 2400px 이상이면 축소 (OCR은 고해상도가 오히려 느림)
+          const MAX = 2400;
+          let w = img.width, h = img.height;
+          if (Math.max(w, h) > MAX) {
+            const ratio = MAX / Math.max(w, h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          // 그레이스케일 + 대비 1.6배 강화 (배경 텍스트 희미하게, 영수증 글자 진하게)
+          const id = ctx.getImageData(0, 0, w, h);
+          const d  = id.data;
+          const CONTRAST = 1.6;
+          for (let i = 0; i < d.length; i += 4) {
+            const gray = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+            const adj  = Math.min(255, Math.max(0, (gray - 128) * CONTRAST + 128));
+            d[i] = d[i+1] = d[i+2] = adj;
+          }
+          ctx.putImageData(id, 0, 0);
+          canvas.toBlob(blob => {
+            resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+            URL.revokeObjectURL(img.src);
+          }, 'image/jpeg', 0.95);
+        };
+        img.onerror = () => resolve(file); // 전처리 실패 시 원본 사용
+        img.src = URL.createObjectURL(file);
+      });
     }
 
     async function runOCR() {
@@ -1534,7 +1591,10 @@
       if (rfCat) rfCat.value = '기타';
       try {
         const ocrLang = document.getElementById('ocrLang')?.value || 'kor+eng';
-        const { data: { text } } = await Tesseract.recognize(receiptFile, ocrLang, {
+        // 이미지 전처리 (그레이스케일 + 대비 강화)
+        fill.style.width = '8%'; lbl.textContent = '이미지 전처리 중...';
+        const processedFile = await preprocessForOCR(receiptFile);
+        const { data: { text } } = await Tesseract.recognize(processedFile, ocrLang, {
           logger: m => {
             const map = {
               'loading tesseract core'      : ['12%', '엔진 로딩 중...'],
@@ -1648,17 +1708,24 @@
       // ────────────────────────────────────────────
       // 2. 통화 감지
       // ────────────────────────────────────────────
-      const CODES = ['HUF','EUR','USD','JPY','GBP','CNY','SGD','AUD','CAD','THB','KRW'];
-      for (const c of CODES) {
-        if (new RegExp('\\b' + c + '\\b').test(text)) { out.currency = c; break; }
-      }
-      if (!out.currency) {
-        for (const [s, c] of [['₩','KRW'],['€','EUR'],['£','GBP'],['¥','JPY']]) {
-          if (text.includes(s)) { out.currency = c; break; }
+      // 한국 영수증 확실한 키워드 먼저 체크 → EUR/HUF 오감지 방지
+      const isKoreanReceipt = /합계금액|승인금액|사업자|공급가|부가세/.test(normC) ||
+                               /합계금액|승인금액|사업자/.test(compact);
+      if (isKoreanReceipt) {
+        out.currency = 'KRW';
+      } else {
+        const CODES = ['HUF','EUR','USD','JPY','GBP','CNY','SGD','AUD','CAD','THB','KRW'];
+        for (const c of CODES) {
+          if (new RegExp('\\b' + c + '\\b').test(text)) { out.currency = c; break; }
         }
+        if (!out.currency) {
+          for (const [s, c] of [['₩','KRW'],['€','EUR'],['£','GBP'],['¥','JPY']]) {
+            if (text.includes(s)) { out.currency = c; break; }
+          }
+        }
+        if (!out.currency && /원[)\s]/.test(normC)) out.currency = 'KRW';
+        if (!out.currency && /\bFt\b/.test(text)) out.currency = 'HUF';
       }
-      if (!out.currency && /원[)\s]|합계금액|부가세|사업자|공급가/.test(normC)) out.currency = 'KRW';
-      if (!out.currency && /\bFt\b/.test(text)) out.currency = 'HUF';
 
       // ────────────────────────────────────────────
       // 3. 금액 — "합계" 레이블 우선, 카드/전화번호 줄 제외
@@ -1742,16 +1809,21 @@
           }
         }
       }
-      // 4-D. 상단 첫 줄 fallback (숫자/OCR 잡음/메타 줄 제외)
+      // 4-D. 상단 첫 줄 fallback
       if (!out.location) {
-        const candidate = lines.slice(0, 12).find(l =>
+        const excludeRe = /TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT|사업자|대\s*표|주\s*소|전\s*화|사\s*업|가맹점|승인|일련|거래|이메일|email/i;
+        const isLineOk = l =>
           l.length >= 2 &&
-          !/^\d[\d\s\.,\-]*$/.test(l) &&
-          !(/[|]{1}/.test(l)) &&                              // OCR 파이프 잡음 제외
+          !/^\d[\d\s\.,\-#*]*$/.test(l) &&            // 숫자/기호만인 줄 제외
+          !/[|]{1}/.test(l) &&                         // OCR 파이프 잡음 제외
           (l.match(/[\uAC00-\uD7A3a-zA-Z]/g) || []).length >= 2 && // 실제 글자 2개 이상
-          !/TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT/i.test(l) &&
-          !/사업자|대\s*표|주\s*소|전\s*화|사\s*업|가맹점|승인|일련|거래/i.test(l)
-        );
+          !excludeRe.test(l);
+        // 한국 영수증이면 한글 포함 줄 우선 검색 (배경 라틴 텍스트 차단)
+        let candidate = null;
+        if (isKoreanReceipt) {
+          candidate = lines.slice(0, 20).find(l => isLineOk(l) && /[\uAC00-\uD7A3]/.test(l));
+        }
+        if (!candidate) candidate = lines.slice(0, 20).find(l => isLineOk(l));
         if (candidate) out.location = candidate.slice(0, 40);
       }
 
@@ -1884,6 +1956,7 @@
       const prev = document.getElementById('receiptPreview');
       prev.hidden = true; prev.src = '';
       document.getElementById('scanPh').hidden = false;
+      document.getElementById('scanDrop').classList.remove('has-photo');
       document.getElementById('ocrScanBtn').disabled = true;
       document.getElementById('rfDate').value         = new Date().toISOString().split('T')[0];
       document.getElementById('rfCategory').value     = '식비';
@@ -2102,9 +2175,9 @@
       const drop  = document.getElementById('scanDrop');
       const camIn = document.getElementById('rfFileCamera');
       const galIn = document.getElementById('rfFileGallery');
-      drop.addEventListener('click', () => camIn.click());
+      drop.addEventListener('click', () => { if (!drop.classList.contains('has-photo')) camIn.click(); });
       document.getElementById('galleryBtn').addEventListener('click', e => { e.stopPropagation(); galIn.click(); });
-      camIn.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); camIn.value = ''; });
+      camIn.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0], true); camIn.value = ''; });
       galIn.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); galIn.value = ''; });
       drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag-over'); });
       drop.addEventListener('dragleave', ()  => drop.classList.remove('drag-over'));
