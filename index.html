@@ -36,6 +36,10 @@
     html, body { margin: 0; width: 100%; min-height: 100%; background: var(--bg); color: var(--text);
       font-family: "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
       overflow-x: hidden; /* 가로 스크롤 완전 차단 */ }
+    html.modal-open, body.modal-open {
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
     body { min-height: 100dvh; padding: 14px 14px 0; box-sizing: border-box; }
     .app {
       width: 100%; max-width: 580px; margin: 0 auto;
@@ -98,11 +102,21 @@
     .muted { color: var(--muted); font-size: .82rem; margin-top: 8px; }
 
     /* ── Chart ── */
-    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
     .chart-header .card-title { margin: 0; }
+    .chart-header .period-btns { flex-shrink: 0; }
+    .chart-title-wrap {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+      min-width: 0; flex: 1;
+    }
+    .chart-title-wrap .chart-title-line { margin: 0; line-height: 1.35; }
+    .chart-title-wrap .chart-title-range { font-size: .82rem; font-weight: 600; color: var(--muted); }
     .period-btns { display: flex; gap: 5px; }
-    .period-btn { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--btn-bg); color: var(--muted); font-size: .8rem; font-weight: 600; cursor: pointer; }
+    .period-btn {
+      height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--btn-bg); color: var(--muted); font-size: .8rem; font-weight: 600; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0;
+    }
     .period-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
     .chart-wrap { position: relative; height: 160px; }
     .chart-loading { position: absolute; inset: 0; display: grid; place-items: center;
@@ -158,21 +172,19 @@
     .status.ok { color: var(--green); }
 
     /* ── Settings Modal ── */
-    .overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 10;
-      backdrop-filter: blur(4px); }
+    .overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 40;
+      backdrop-filter: blur(4px); touch-action: none; }
     .overlay.hidden { display: none; }
     .modal { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
       width: min(100%, 580px); background: var(--modal-bg); border-top-left-radius: 20px;
-      border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
-      padding: 20px 16px 30px; max-height: 70dvh; overflow-y: auto; }
+      border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 41;
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px)); max-height: 85dvh; overflow-y: auto; }
     .modal.hidden { display: none; }
     .exp-edit-modal {
-      z-index: 12;
+      z-index: 42;
       max-height: 88dvh;
       padding: 20px 16px calc(68px + env(safe-area-inset-bottom, 8px) + 16px);
     }
-    .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px;
-      margin: 0 auto 16px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .modal-header h3 { margin: 0; font-size: 1rem; }
     .modal-close { background: none; border: none; color: var(--muted); font-size: 1.1rem;
@@ -193,8 +205,8 @@
     .info-modal {
       position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
       width: min(100%, 580px); background: var(--modal-bg); border-top-left-radius: 20px;
-      border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
-      padding: 20px 20px calc(68px + env(safe-area-inset-bottom, 8px) + 20px);
+      border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 41;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
       max-height: 92dvh; overflow-y: auto;
     }
     .app-version {
@@ -259,11 +271,11 @@
       max-width: 580px; margin: 0 auto;
       background: var(--panel); border-top: 1px solid var(--border);
       display: flex; z-index: 30;
-      padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 10px);
     }
     .nav-tab {
       flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-      padding: 9px 0 7px; border: none; background: none; color: var(--muted);
+      padding: 9px 0 9px; border: none; background: none; color: var(--muted);
       font-size: .68rem; font-weight: 700; cursor: pointer; transition: color .15s;
     }
     .nav-tab.active { color: var(--accent); }
@@ -496,7 +508,7 @@
     }
     .filter-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
 
-    /* ── Expense query (정렬·조회) ── */
+    /* ── Expense query (조회) ── */
     .exp-query {
       display: grid; gap: 8px; margin-bottom: 14px; padding-top: 10px;
       border-top: 1px solid var(--border);
@@ -546,7 +558,6 @@
 
   <!-- Info Modal -->
   <div id="infoModal" class="info-modal hidden">
-    <div class="modal-handle"></div>
     <div class="info-card-header">
       <h3>개발자 정보</h3>
       <button class="modal-close" id="closeInfo">✕</button>
@@ -586,7 +597,6 @@
   </div>
 
   <div id="settingsModal" class="modal hidden">
-    <div class="modal-handle"></div>
     <div class="modal-header">
       <h3>통화 선택</h3>
       <button class="modal-close" id="closeSettings">✕</button>
@@ -596,10 +606,9 @@
   </div>
 
   <div id="expEditModal" class="modal exp-edit-modal hidden">
-    <div class="modal-handle"></div>
     <div class="modal-header">
       <h3 id="expEditModalTitle">지출 내역 수정</h3>
-      <button type="button" class="modal-close" id="closeExpEdit">��</button>
+      <button type="button" class="modal-close" id="closeExpEdit">✕</button>
     </div>
     <p class="modal-desc" id="expEditModalDesc"></p>
     <div id="expEditFormRoot"></div>
@@ -650,7 +659,7 @@
     <!-- Chart Card -->
     <section class="chart-card">
       <div class="chart-header">
-        <h2 class="card-title" id="chartTitle">항목을 클릭하면 차트가 표시됩니다</h2>
+        <h2 class="card-title chart-title-wrap" id="chartTitle"><span class="chart-title-line" id="chartTitleLine1">항목을 클릭하면 차트가 표시됩니다</span><span class="chart-title-line chart-title-range" id="chartTitleLine2" hidden></span></h2>
         <div class="period-btns">
           <button class="period-btn active" data-days="7">7일</button>
           <button class="period-btn" data-days="30">30일</button>
@@ -830,19 +839,6 @@
 
       <div class="exp-query">
         <div class="exp-query-row">
-          <span class="exp-query-lbl">정렬</span>
-          <select class="exp-query-sel" id="expSortSel">
-            <option value="receipt_date_desc">Date: newest first</option>
-            <option value="receipt_date_asc">Date: oldest first</option>
-            <option value="user_asc">Name: A to Z</option>
-            <option value="user_desc">Name: Z to A</option>
-            <option value="cat_asc">Category: A to Z</option>
-            <option value="cat_desc">Category: Z to A</option>
-            <option value="amount_desc">KRW: high to low</option>
-            <option value="amount_asc">KRW: low to high</option>
-          </select>
-        </div>
-        <div class="exp-query-row">
           <span class="exp-query-lbl">이름</span>
           <select class="exp-query-sel" id="expQUserSel" title="지출자 이름으로 조회">
             <option value="">전체</option>
@@ -890,7 +886,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
-    const APP_VERSION = 'v2026.04.14 1344';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
+    const APP_VERSION = 'v2026.04.14 2049';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
@@ -1006,23 +1002,47 @@
       toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
     }
 
+    function refreshModalScrollLock() {
+      const locked = !document.getElementById('overlay').classList.contains('hidden');
+      document.documentElement.classList.toggle('modal-open', locked);
+      document.body.classList.toggle('modal-open', locked);
+    }
+
+    function setChartTitle(main, sub) {
+      const l1 = document.getElementById('chartTitleLine1');
+      const l2 = document.getElementById('chartTitleLine2');
+      if (!l1 || !l2) return;
+      l1.textContent = main;
+      if (sub != null && sub !== '') {
+        l2.textContent = sub;
+        l2.hidden = false;
+      } else {
+        l2.textContent = '';
+        l2.hidden = true;
+      }
+    }
+
     // ── Settings Modal ────────────────────────────────────
     function openSettings() {
       document.getElementById('settingsModal').classList.remove('hidden');
       document.getElementById('overlay').classList.remove('hidden');
+      refreshModalScrollLock();
     }
     function closeSettings() {
       document.getElementById('settingsModal').classList.add('hidden');
       document.getElementById('overlay').classList.add('hidden');
+      refreshModalScrollLock();
     }
     function openInfo() {
       document.getElementById('appVersion').textContent = `현재 버전: ${APP_VERSION}`;
       document.getElementById('infoModal').classList.remove('hidden');
       document.getElementById('overlay').classList.remove('hidden');
+      refreshModalScrollLock();
     }
     function closeInfo() {
       document.getElementById('infoModal').classList.add('hidden');
       document.getElementById('overlay').classList.add('hidden');
+      refreshModalScrollLock();
     }
 
     function normReceiptDateInput(d) {
@@ -1136,12 +1156,14 @@
       document.getElementById('infoModal').classList.add('hidden');
       document.getElementById('expEditModal').classList.remove('hidden');
       document.getElementById('overlay').classList.remove('hidden');
+      refreshModalScrollLock();
     }
 
     function closeExpEdit() {
       document.getElementById('expEditModal').classList.add('hidden');
       document.getElementById('overlay').classList.add('hidden');
       expEditIdx = -1;
+      refreshModalScrollLock();
     }
 
     async function saveExpEdit() {
@@ -1215,7 +1237,16 @@
         if (activeCodes.length <= 2) return;
         activeCodes.splice(idx, 1);
         if (widgetBase === code) widgetBase = 'KRW';
-        if (chartCode === code) chartCode = null;
+        if (chartCode === code) {
+          chartCode = null;
+          if (chartInst) {
+            chartInst.data.labels = [];
+            chartInst.data.datasets[0].data = [];
+            chartInst.data.datasets[0].currencyCode = null;
+            chartInst.update();
+          }
+          setChartTitle('\uD56D\uBAA9\uC744 \uD074\uB9AD\uD558\uBA74 \uCC28\uD2B8\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4');
+        }
       } else {
         activeCodes.push(code);
       }
@@ -1325,6 +1356,7 @@
             data: [], borderWidth: 2, fill: true, tension: 0.35,
             pointRadius: 0, pointHoverRadius: 5,
             spanGaps: true,   // null 구간을 끊지 않고 이어서 그림
+            currencyCode: null,
           }]
         },
         options: {
@@ -1338,9 +1370,12 @@
                 label: item => {
                   const v = item.parsed.y;
                   if (v == null) return '';
-                  const dec = ALL[chartCode]?.int ? 0 : 2;
+                  const ds = item.chart.data.datasets[item.datasetIndex];
+                  const code = ds.currencyCode || chartCode;
+                  if (!code) return '';
+                  const dec = ALL[code]?.int ? 0 : 2;
                   const formatted = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: dec }).format(v);
-                  return ` 1 ${chartCode} = ${formatted} KRW`;
+                  return `1 ${code} = ${formatted} KRW`;
                 }
               }
             }
@@ -1419,17 +1454,17 @@
 
     async function selectChartCode(code) {
       chartCode = code;
+      if (chartInst?.data?.datasets?.[0]) chartInst.data.datasets[0].currencyCode = code;
       renderWidgetList();
       const loadEl = document.getElementById('chartLoading');
-      const titleEl = document.getElementById('chartTitle');
-      titleEl.textContent = `📈 1 ${code} → KRW (${chartDays}일) 로딩 중...`;
+      setChartTitle(`📈 1 ${code} → KRW (${chartDays}일) 로딩 중...`);
       loadEl.classList.remove('hidden');
 
       const ok = await fetchHistorical(chartDays);
 
       loadEl.classList.add('hidden');
       if (!ok || !histCache[chartDays]) {
-        titleEl.textContent = `⚠️ 차트 데이터를 불러오지 못했습니다`;
+        setChartTitle(`⚠️ 차트 데이터를 불러오지 못했습니다`);
         // 빈 차트
         chartInst.data.labels   = [];
         chartInst.data.datasets[0].data = [];
@@ -1454,7 +1489,7 @@
       // 유효 데이터가 하나도 없으면 메시지 표시
       const hasData = values.some(v => v !== null);
       if (!hasData) {
-        document.getElementById('chartTitle').textContent = `⚠️ ${chartCode} 데이터가 없습니다`;
+        setChartTitle(`⚠️ ${chartCode} 데이터가 없습니다`);
         return;
       }
 
@@ -1470,12 +1505,15 @@
       chartInst.data.datasets[0].borderColor       = color;
       chartInst.data.datasets[0].backgroundColor   = grad;
       chartInst.data.datasets[0].spanGaps          = true;
+      chartInst.data.datasets[0].currencyCode      = chartCode;
       chartInst.update();
 
       const min = Math.min(...values.filter(Boolean));
       const max = Math.max(...values.filter(Boolean));
-      document.getElementById('chartTitle').textContent =
-        `1 ${chartCode} → KRW  ${chartDays}일  (${fmtRate(min)} ~ ${fmtRate(max)})`;
+      setChartTitle(
+        `1 ${chartCode} → KRW · ${chartDays}일`,
+        `(${fmtRate(min)} ~ ${fmtRate(max)})`
+      );
     }
 
     // ── Favorites ─────────────────────────────────────────
@@ -2282,30 +2320,34 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
         .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
-    function localizeExpSortSel() {
-      const sel = document.getElementById('expSortSel');
-      if (!sel) return;
-      const L = [
-        '\uD83D\uDCC5 \uB0A8\uC9C0 \u00B7 \uCD5C\uC2E0\uC21C',
-        '\uD83D\uDCC5 \uB0A8\uC9C0 \u00B7 \uC624\uB798\uB41C\uC21C',
-        '\uD83D\uDC64 \uC774\uB984 \u00B7 \uAC00\uB098\uB2E4\uC21C',
-        '\uD83D\uDC64 \uC774\uB984 \u00B7 \uC5ED\uC21C',
-        '\uD83C\uDFF7\uFE0F \uD569\uBAA9 \u00B7 \uAC00\uB098\uB2E4\uC21C',
-        '\uD83C\uDFF7\uFE0F \uD569\uBAA9 \u00B7 \uC5ED\uC21C',
-        '\u20A9 \uC6D0\uD654 \u00B7 \uB192\uC740\uC21C',
-        '\u20A9 \uC6D0\uD654 \u00B7 \uB0AE\uC740\uC21C'
-      ];
-      [...sel.options].forEach((o, i) => { if (L[i]) o.textContent = L[i]; });
+    function formatYmdLocal(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function getThisMonthExpenseRange() {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: formatYmdLocal(start), to: formatYmdLocal(end) };
+    }
+
+    function applyDefaultExpenseDateRange() {
+      const { from, to } = getThisMonthExpenseRange();
+      const df = document.getElementById('expDateFrom');
+      const dt = document.getElementById('expDateTo');
+      if (df) df.value = from;
+      if (dt) dt.value = to;
     }
 
     function getExpenseQueryFromUI() {
-      const sortEl = document.getElementById('expSortSel');
       const uEl = document.getElementById('expQUserSel');
       const cEl = document.getElementById('expQCatSel');
       const fromEl = document.getElementById('expDateFrom');
       const toEl = document.getElementById('expDateTo');
       return {
-        sort: (sortEl && sortEl.value) || 'receipt_date_desc',
         qUser: (uEl && uEl.value) || '',
         qCat: (cEl && cEl.value) || '',
         dFrom: (fromEl && fromEl.value) || '',
@@ -2327,50 +2369,6 @@
         if (q.dTo && d > q.dTo) return false;
       }
       return true;
-    }
-
-    function compareExpensesForSort(a, b, sort) {
-      const dateA = receiptDateForFilter(a);
-      const dateB = receiptDateForFilter(b);
-      const userA = (a.user_name || '').trim();
-      const userB = (b.user_name || '').trim();
-      const catA = a.category || '기타';
-      const catB = b.category || '기타';
-      const amtA = Number(a.amount_krw) || 0;
-      const amtB = Number(b.amount_krw) || 0;
-      let c = 0;
-      switch (sort) {
-        case 'receipt_date_asc':
-          c = dateA.localeCompare(dateB);
-          break;
-        case 'receipt_date_desc':
-          c = dateB.localeCompare(dateA);
-          break;
-        case 'user_asc':
-          c = userA.localeCompare(userB, 'ko');
-          break;
-        case 'user_desc':
-          c = userB.localeCompare(userA, 'ko');
-          break;
-        case 'cat_asc':
-          c = catA.localeCompare(catB, 'ko');
-          break;
-        case 'cat_desc':
-          c = catB.localeCompare(catA, 'ko');
-          break;
-        case 'amount_asc':
-          c = amtA - amtB;
-          break;
-        case 'amount_desc':
-          c = amtB - amtA;
-          break;
-        default:
-          c = dateB.localeCompare(dateA);
-      }
-      if (c !== 0) return c;
-      const t = dateB.localeCompare(dateA);
-      if (t !== 0) return t;
-      return String(b.id).localeCompare(String(a.id));
     }
 
     function refreshExpenseQueryOptions() {
@@ -2407,7 +2405,13 @@
         return true;
       }).filter(e => passesExtraExpenseFilters(e, q));
 
-      const sorted = [...filtered].sort((a, b) => compareExpensesForSort(a, b, q.sort));
+      const sorted = [...filtered].sort((a, b) => {
+        const dateA = receiptDateForFilter(a);
+        const dateB = receiptDateForFilter(b);
+        let c = dateB.localeCompare(dateA);
+        if (c !== 0) return c;
+        return String(b.id).localeCompare(String(a.id));
+      });
 
       // Summary (always over ALL expenses, not filtered)
       const total  = expenses.reduce((s, e) => s + (e.amount_krw || 0), 0);
@@ -2625,25 +2629,19 @@
       document.getElementById('refreshExpBtn').addEventListener('click', loadExpenses);
       document.getElementById('csvBtn').addEventListener('click', exportCSV);
 
-      localizeExpSortSel();
-      ['expSortSel', 'expQUserSel', 'expQCatSel', 'expDateFrom', 'expDateTo'].forEach(id => {
+      applyDefaultExpenseDateRange();
+      ['expQUserSel', 'expQCatSel', 'expDateFrom', 'expDateTo'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', () => renderExpenses());
       });
       const expQueryReset = document.getElementById('expQueryReset');
       if (expQueryReset) {
         expQueryReset.addEventListener('click', () => {
-          const sortSel = document.getElementById('expSortSel');
-          if (sortSel) sortSel.value = 'receipt_date_desc';
           const u = document.getElementById('expQUserSel');
           const c = document.getElementById('expQCatSel');
           if (u) u.value = '';
           if (c) c.value = '';
-          const df = document.getElementById('expDateFrom');
-          const dt = document.getElementById('expDateTo');
-          if (df) df.value = '';
-          if (dt) dt.value = '';
-          localizeExpSortSel();
+          applyDefaultExpenseDateRange();
           renderExpenses();
         });
       }
