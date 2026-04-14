@@ -35,7 +35,8 @@
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; width: 100%; min-height: 100%; background: var(--bg); color: var(--text);
       font-family: "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif; }
-    body { min-height: 100dvh; display: grid; place-items: start center; padding: 14px; }
+    body { min-height: 100dvh; display: grid; place-items: start center;
+           padding: 14px 14px calc(14px + 68px); /* 하단: 14px + 고정 nav 높이 68px */ }
     .app { width: min(100%, 580px); display: grid; gap: 12px; }
 
     /* ── Header ── */
@@ -324,44 +325,57 @@
     .exp-card {
       background: var(--panel); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+      /* 뷰포트 높이에 맞게 카드가 최소한 화면을 채우도록 */
+      min-height: calc(100dvh - 68px - 28px - 60px); /* nav + body padding + header 여유 */
     }
     .exp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .exp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
     .sm-btn {
-      min-height: 34px; padding: 0 11px; border-radius: 9px;
+      min-height: 36px; padding: 0 13px; border-radius: 9px;
       border: 1px solid var(--border); background: var(--btn-bg); color: var(--text);
-      font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s;
+      font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s;
     }
     .sm-btn:hover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
     .exp-summary { display: flex; gap: 8px; margin-bottom: 12px; }
     .sum-c {
-      flex: 1; background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px;
+      flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 8px; text-align: center;
     }
-    .sum-c-lbl { font-size: .7rem; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
-    .sum-c-val { font-size: .95rem; font-weight: 700; }
-    .exp-items { display: grid; gap: 8px; }
+    .sum-c-lbl { font-size: .68rem; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+    .sum-c-val { font-size: .88rem; font-weight: 700; word-break: break-all; }
+    .exp-items { display: grid; gap: 10px; }
     .ei {
       background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 12px; padding: 12px;
+      border-radius: 14px; padding: 13px; overflow: hidden;
     }
-    .ei-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .ei-top {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 7px; gap: 6px;
+    }
+    .ei-top-left { flex: 1; min-width: 0; }
     .ei-cat {
       display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
       border-radius: 20px; font-size: .74rem; font-weight: 700;
-      background: var(--accent-dim); color: var(--accent);
+      background: var(--accent-dim); color: var(--accent); white-space: nowrap;
     }
-    .ei-user { font-size: .75rem; color: var(--muted); margin-top: 3px; }
+    .ei-user { font-size: .74rem; color: var(--muted); margin-top: 3px; }
     .ei-del {
-      border: none; background: none; color: var(--muted); font-size: .85rem;
-      cursor: pointer; padding: 3px 7px; border-radius: 6px; flex-shrink: 0;
+      border: none; background: none; color: var(--muted); font-size: .9rem;
+      cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; line-height: 1;
     }
     .ei-del:hover { color: var(--red); background: rgba(248,113,113,.1); }
-    .ei-amts { display: flex; justify-content: space-between; align-items: baseline; }
-    .ei-loc { font-size: 1rem; font-weight: 700; }
-    .ei-krw { font-size: .85rem; color: var(--accent); font-weight: 600; }
-    .ei-meta { font-size: .74rem; color: var(--muted); margin-top: 4px; }
-    .exp-empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: .88rem; line-height: 1.8; }
+    /* 금액 행: 모바일에서 세로 배치 */
+    .ei-amts {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 6px; flex-wrap: wrap;
+    }
+    .ei-loc { font-size: .95rem; font-weight: 700; word-break: break-all; }
+    .ei-krw { font-size: .85rem; color: var(--accent); font-weight: 700; white-space: nowrap; }
+    .ei-meta {
+      font-size: .72rem; color: var(--muted); margin-top: 5px;
+      word-break: break-all; line-height: 1.5;
+    }
+    .exp-empty { text-align: center; padding: 40px 0; color: var(--muted); font-size: .88rem; line-height: 1.9; }
 
     /* ── Supabase Config ── */
     .sb-setup {
@@ -416,11 +430,16 @@
     .ei-location { font-size: .83rem; font-weight: 600; color: var(--text); margin-top: 2px; }
 
     /* ── Expense filter ── */
-    .exp-filter { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 2px; }
+    .exp-filter {
+      display: flex; gap: 6px; margin-bottom: 12px;
+      overflow-x: auto; padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .exp-filter::-webkit-scrollbar { display: none; }
     .filter-btn {
-      min-height: 30px; padding: 0 12px; border-radius: 8px;
+      min-height: 32px; padding: 0 13px; border-radius: 8px; flex-shrink: 0;
       border: 1px solid var(--border); background: var(--btn-bg); color: var(--muted);
-      font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s;
+      font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s;
       white-space: nowrap; flex-shrink: 0;
     }
     .filter-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
@@ -432,6 +451,12 @@
       .rf-row { grid-template-columns: 1fr; gap: 3px; }
       .exp-summary { flex-wrap: wrap; }
       .scan-row { flex-direction: column; }
+      /* 모바일: 요약 카드 글씨 크기 조정 */
+      .sum-c-val { font-size: .8rem; }
+      .sum-c { padding: 8px 6px; }
+      /* 모바일: 지출 항목 패딩 축소 */
+      .ei { padding: 11px; border-radius: 12px; }
+      .ei-loc { font-size: .88rem; }
     }
   </style>
 </head>
@@ -1837,7 +1862,7 @@
           : '';
         return `<div class="ei" data-id="${e.id}" data-local="${!!e._local}">
           <div class="ei-top">
-            <div>
+            <div class="ei-top-left">
               <span class="ei-cat">${em} ${escHtml(e.category || '기타')}</span>
               ${e.location_name ? `<div class="ei-location">🏪 ${escHtml(e.location_name)}</div>` : ''}
               ${e.user_name     ? `<div class="ei-user">👤 ${escHtml(e.user_name)}</div>` : ''}
