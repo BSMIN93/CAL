@@ -189,8 +189,8 @@
       position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
       width: min(100%, 580px); background: var(--modal-bg); border-top-left-radius: 20px;
       border-top-right-radius: 20px; border: 1px solid var(--border); z-index: 11;
-      padding: 20px 20px calc(env(safe-area-inset-bottom, 12px) + 24px);
-      max-height: 88dvh; overflow-y: auto;
+      padding: 20px 20px calc(68px + env(safe-area-inset-bottom, 8px) + 20px);
+      max-height: 92dvh; overflow-y: auto;
     }
     .app-version {
       text-align: center; font-size: .72rem; color: var(--muted);
@@ -814,7 +814,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
-    const APP_VERSION = 'v2026.04.14';   // 배포 날짜 기반 버전 (업데이트 시 수정)
+    const APP_VERSION = 'v2026.04.14 13:10';  // 배포 날짜+시간 기반 버전 (업데이트 시 수정)
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
