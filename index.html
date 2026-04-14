@@ -831,7 +831,7 @@
     'use strict';
 
     // ── Constants ─────────────────────────────────────────
-    const APP_VERSION = 'v2026.04.14 13:10';  // 배포 날짜+시간 기반 버전 (업데이트 시 수정)
+    const APP_VERSION = 'v2026.04.14 1334';  // Format vYYYY.MM.DD HHmm (no colon). Bump APP_VERSION + package.json on every GitHub push.
     const RATE_API   = 'https://open.er-api.com/v6/latest/USD';
     // 과거 환율: fawazahmed0/currency-api (jsdelivr CDN, 무료·무키·일별 업데이트)
     const HIST_BASE  = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{DATE}/v1/currencies/usd.json';
@@ -2091,6 +2091,21 @@
       return rates['KRW'] / rates[currency];
     }
 
+    /** Asia/Seoul YYYY-MM-DD HH:mm:ss.cc (centiseconds), matches receipts.created_at timestamp(2) */
+    function createdAtKstTimestamp2(d = new Date()) {
+      const p = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+      }).formatToParts(d);
+      const g = t => p.find(x => x.type === t)?.value ?? '00';
+      const ms = d.getTime();
+      const fracMs = ms - Math.floor(ms / 1000) * 1000;
+      const cs = Math.floor(fracMs / 10).toString().padStart(2, '0');
+      return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}:${g('second')}.${cs}`;
+    }
+
     async function saveReceipt() {
       const receiptDate   = document.getElementById('rfDate').value;
       const category      = document.getElementById('rfCategory').value;
@@ -2122,11 +2137,11 @@
         is_reimbursed  : false,
       };
 
-      // Offline-first: always save locally
+      // Offline-first: always save locally (KST wall time, .cc); cloud row uses DB default after sql/receipts_created_at_kst.sql
       const localRec = {
         ...record,
         id        : 'local_' + Date.now(),
-        created_at: new Date().toISOString(),
+        created_at: createdAtKstTimestamp2(),
         _local    : true,
       };
       localExpenses.unshift(localRec);
