@@ -1418,7 +1418,7 @@
       fill.style.width = '5%';
       lbl.textContent  = 'OCR 초기화 중...';
       try {
-        const { data: { text } } = await Tesseract.recognize(receiptFile, 'eng', {
+        const { data: { text } } = await Tesseract.recognize(receiptFile, 'kor+eng', {
           logger: m => {
             const map = {
               'loading tesseract core'      : ['12%', '엔진 로딩 중...'],
@@ -1444,6 +1444,7 @@
           parsed.location && '상호명',
           parsed.currency && '통화',
           parsed.amount   != null && '금액',
+          parsed.category && '항목',
         ].filter(Boolean);
         showToast(filled.length
           ? `✅ 자동 입력: ${filled.join(' · ')}`
@@ -1464,68 +1465,146 @@
       'BP ','OMV','EURONICS','MEDIA MARKT','H&M','ZARA',
     ];
 
+    // 카테고리 자동 분류 키워드 (상호명·영수증 본문 기준)
+    const CATEGORY_RULES = [
+      { cat: '교통비',   kw: ['주유소','주유','경유','휘발유','기름','주유기','GAS STATION','PETROL','FUEL','SHELL','MOL ','OMV','BP ','택시','TAXI','버스','지하철','KTX','기차','철도','공항버스','고속버스','AIRPORT','항공','AIRLINE'] },
+      { cat: '식비',     kw: ['식당','음식점','레스토랑','RESTAURANT','카페','CAFE','COFFEE','커피','베이커리','BAKERY','BURGER','PIZZA','SUBWAY','KFC','MCDONALD','STARBUCKS','DOMINO','편의점','CU ','GS25','세븐일레븐','이마트24','마트','슈퍼','SUPERMARKET','SPAR','LIDL','ALDI','TESCO','PENNY','AUCHAN','CBA','COOP'] },
+      { cat: '숙박비',   kw: ['호텔','HOTEL','모텔','MOTEL','펜션','숙박','게스트하우스','GUESTHOUSE','AIRBNB','INN','RESORT'] },
+      { cat: '쇼핑',     kw: ['쇼핑','SHOPPING','의류','패션','FASHION','ZARA','H&M','IKEA','DECATHLON','ROSSMANN','DM ','MÜLLER','EURONICS','MEDIA MARKT','UNIQLO','나이키','NIKE','아디다스','ADIDAS'] },
+      { cat: '관광/여가',kw: ['박물관','MUSEUM','미술관','전시','공원','테마파크','놀이공원','영화','CINEMA','관광','TOUR','여가','스포츠'] },
+      { cat: '의료/약국',kw: ['약국','PHARMACY','병원','HOSPITAL','의원','클리닉','CLINIC','치과','한의원'] },
+      { cat: '통신',     kw: ['KT ','SKT','LG유플','통신','TELECOM','인터넷'] },
+    ];
+
     function parseReceiptText(text) {
-      const out = { date: '', amount: null, currency: '', location: '' };
+      const out = { date: '', amount: null, currency: '', location: '', category: '' };
       const upper = text.toUpperCase();
+      // OCR 아티팩트: 한글 사이 공백 제거한 버전도 준비
+      const compact = text.replace(/(?<=[\uAC00-\uD7A3])\s+(?=[\uAC00-\uD7A3])/g, '');
       const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-      // ── 날짜 ──────────────────────────────────────────────
-      const dps = [
-        [/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/,
-          m => `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`],
-        [/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/,
-          m => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`],
-        [/(\d{4})(\d{2})(\d{2})(?!\d)/,
-          m => `${m[1]}-${m[2]}-${m[3]}`],
-      ];
-      for (const [re, fmt] of dps) {
-        const m = text.match(re); if (m) { out.date = fmt(m); break; }
+      // ────────────────────────────────────────────
+      // 1. 날짜
+      // ────────────────────────────────────────────
+      // 1-A. 한국 승인일시 YYMMDDHHMMSS (예: 260407085848 → 2026-04-07)
+      const krApproval = text.match(/승인일시\s*[:\uff1a]?\s*(\d{2})(\d{2})(\d{2})\d{6}/);
+      if (krApproval) {
+        const [,yy,mm,dd] = krApproval;
+        out.date = `20${yy}-${mm}-${dd}`;
+      }
+      // 1-B. 표준 YYYY-MM-DD / YYYY.MM.DD
+      if (!out.date) {
+        const m = text.match(/(\d{4})\s*[-.\\/]\s*(\d{1,2})\s*[-.\\/]\s*(\d{1,2})/);
+        if (m) out.date = `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+      }
+      // 1-C. DD.MM.YYYY (유럽식)
+      if (!out.date) {
+        const m = text.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
+        if (m) out.date = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+      }
+      // 1-D. YYYYMMDD 연속
+      if (!out.date) {
+        const m = text.match(/(\d{4})(\d{2})(\d{2})(?!\d)/);
+        if (m) out.date = `${m[1]}-${m[2]}-${m[3]}`;
       }
 
-      // ── 통화 ──────────────────────────────────────────────
+      // ────────────────────────────────────────────
+      // 2. 통화 감지
+      // ────────────────────────────────────────────
+      // 2-A. 명시적 통화코드
       const CODES = ['HUF','EUR','USD','JPY','GBP','CNY','SGD','AUD','CAD','THB','KRW'];
       for (const c of CODES) {
         if (new RegExp(`\\b${c}\\b`).test(text)) { out.currency = c; break; }
       }
+      // 2-B. 기호
       if (!out.currency) {
-        for (const [s, c] of [['€','EUR'],['£','GBP'],['¥','JPY'],['₩','KRW']]) {
+        for (const [s, c] of [['₩','KRW'],['€','EUR'],['£','GBP'],['¥','JPY']]) {
           if (text.includes(s)) { out.currency = c; break; }
         }
       }
+      // 2-C. 한국어 영수증 판단: '원', '합계금액', '부가세', '사업자' 등
+      if (!out.currency && /원[)\s]|합계금액|부가세|사업자번호|사업자등록/.test(compact)) {
+        out.currency = 'KRW';
+      }
+      // 2-D. 헝가리 Ft
       if (!out.currency && /\bFt\b/.test(text)) out.currency = 'HUF';
 
-      // ── 금액 (최댓값 = 합계) ───────────────────────────────
-      const nums = [...text.matchAll(/\b\d[\d,]*(?:\.\d+)?\b/g)]
-        .map(m => parseFloat(m[0].replace(/,/g,'')))
-        .filter(n => isFinite(n) && n > 0 && n < 1e8);
-      if (nums.length) out.amount = Math.max(...nums);
+      // ────────────────────────────────────────────
+      // 3. 금액 — "합계" 레이블 우선, 카드/전화번호 제외
+      // ────────────────────────────────────────────
+      // 3-A. 한국 영수증: 합계금액 / 합 계 / 결제금액 / 승인금액 레이블 뒤 숫자
+      const krTotalRe = /(?:합계\s*금액|합\s*계|결제\s*금액|승인\s*금액|총\s*액)\s*[:\uff1a]?\s*([\d,]+)/;
+      const krM = compact.match(krTotalRe);
+      if (krM) {
+        out.amount = parseFloat(krM[1].replace(/,/g, ''));
+      }
+      // 3-B. 유럽 영수증: ÖSSZESEN / TOTAL / VÉGÖSSZEG 레이블
+      if (out.amount == null) {
+        const euM = text.match(/(?:ÖSSZESEN|TOTAL|VÉGÖSSZEG|AMOUNT DUE|BETRAG|SUMME)\s*[:\uff1a]?\s*([\d\s,.]+)/i);
+        if (euM) {
+          const raw = euM[1].trim().replace(/\s/g,'');
+          // 헝가리식: 마지막 쉼표가 소수점 아님 → 쉼표 제거
+          out.amount = parseFloat(raw.replace(/,/g,'').replace(/\./g,''));
+          if (!isFinite(out.amount)) out.amount = parseFloat(raw.replace(/,/g,''));
+        }
+      }
+      // 3-C. 최댓값 fallback (카드번호·전화번호·사업자번호 줄 제외)
+      if (out.amount == null) {
+        const skipRe = /카드\s*번호|card\s*no|tel|fax|사업자|가맹점|승인\s*no|\*/i;
+        const nums = lines
+          .filter(l => !skipRe.test(l))
+          .flatMap(l => [...l.matchAll(/\b(\d{1,3}(?:,\d{3})+|\d{4,})\b/g)])
+          .map(m => parseFloat(m[1].replace(/,/g,'')))
+          .filter(n => isFinite(n) && n >= 100 && n < 10_000_000);
+        if (nums.length) out.amount = Math.max(...nums);
+      }
 
-      // ── 상호명 ────────────────────────────────────────────
-      // 1순위: 알려진 상점 키워드 매칭
-      for (const store of KNOWN_STORES) {
-        if (upper.includes(store)) {
-          // 해당 키워드가 포함된 줄 추출
-          const matchLine = lines.find(l => l.toUpperCase().includes(store.trim()));
-          if (matchLine) {
-            out.location = matchLine.replace(/[^\w\sÀ-žÁáÉéÍíÓóÖöŐőÚúÜüŰű&.,\-]/g, '').trim().slice(0, 40);
-            break;
+      // ────────────────────────────────────────────
+      // 4. 상호명
+      // ────────────────────────────────────────────
+      // 4-A. 한국 '상 호 :' 또는 '상호:' 패턴 (OCR 공백 포함)
+      const krStoreRe = /상\s*호\s*[:\uff1a]\s*(.+)/;
+      const krSM = compact.match(krStoreRe) || text.match(krStoreRe);
+      if (krSM) {
+        out.location = krSM[1].trim().split(/\s{2,}|[|]/)[0].slice(0, 40);
+      }
+      // 4-B. 알려진 글로벌 상점 키워드
+      if (!out.location) {
+        for (const store of KNOWN_STORES) {
+          if (upper.includes(store.trim())) {
+            const matchLine = lines.find(l => l.toUpperCase().includes(store.trim()));
+            if (matchLine) {
+              out.location = matchLine.replace(/[^\w\sÀ-žÁáÉéÍíÓóÖöŐőÚúÜüŰű\uAC00-\uD7A3&.,\-]/g, '').trim().slice(0, 40);
+              break;
+            }
           }
         }
       }
-      // 2순위: 영수증 상단 첫 줄 중 텍스트가 많은 줄 (숫자만 있는 줄 제외)
+      // 4-C. 상단 첫 줄 fallback (숫자/URL/전화번호 줄 제외)
       if (!out.location) {
-        const candidate = lines.slice(0, 6).find(l =>
-          l.length >= 3 &&                        // 너무 짧지 않고
-          !/^\d[\d\s\.,]*$/.test(l) &&            // 숫자만 있는 줄 아니고
-          !/^(TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT)/i.test(l) // 전화/URL/세금 아닌 줄
+        const candidate = lines.slice(0, 8).find(l =>
+          l.length >= 2 &&
+          !/^\d[\d\s\.,\-]*$/.test(l) &&
+          !/^(TEL|FAX|WWW|HTTP|ADÓSZÁM|ADO|VAT|사업자|대\s*표|주\s*소|전\s*화)/i.test(l)
         );
         if (candidate) out.location = candidate.slice(0, 40);
+      }
+
+      // ────────────────────────────────────────────
+      // 5. 카테고리 자동 분류
+      // ────────────────────────────────────────────
+      const haystack = (out.location + ' ' + text).toUpperCase();
+      for (const { cat, kw } of CATEGORY_RULES) {
+        if (kw.some(k => haystack.includes(k.toUpperCase()))) {
+          out.category = cat;
+          break;
+        }
       }
 
       return out;
     }
 
-    function autoFillForm({ date, amount, currency, location }) {
+    function autoFillForm({ date, amount, currency, location, category }) {
       function hl(id) {
         const el = document.getElementById(id);
         if (!el) return el;
@@ -1540,6 +1619,10 @@
         if ([...sel.options].some(o => o.value === currency)) { sel.value = currency; hl('rfCurrency'); }
       }
       if (amount != null) hl('rfAmount').value = amount;
+      if (category) {
+        const catSel = document.getElementById('rfCategory');
+        if ([...catSel.options].some(o => o.value === category)) { catSel.value = category; hl('rfCategory'); }
+      }
       calcKRW();
     }
 
